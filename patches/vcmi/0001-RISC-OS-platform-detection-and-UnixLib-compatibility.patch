@@ -1,7 +1,7 @@
 From fc09ecd942cc43598008026807d567868efae4cb Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:38:12 +0100
-Subject: [PATCH 01/10] RISC OS: platform detection and UnixLib compatibility
+Subject: [PATCH 01/11] RISC OS: platform detection and UnixLib compatibility
 
 Global.h: a RISC OS branch (VCMI_UNIX + VCMI_RISCOS) and riscos/riscos_compat.h:
 undefine UnixLib's major()/minor() macros, stubs for if_indextoname and

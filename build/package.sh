@@ -23,6 +23,16 @@ sed -i "s/^WimpSlot -min [0-9]*K -max [0-9]*K$/WimpSlot -min ${need}K -max ${nee
 # VCMI's own data: the game rules (config) and the built-in mod (Mods/vcmi).
 cp -r "$WORK/vcmi/config" "$APP/config"
 mkdir -p "$APP/Mods" && cp -r "$WORK/vcmi/Mods/vcmi" "$APP/Mods/vcmi"
+# RISC OS file names can't hold % (two of the random map templates have it):
+# "200%" becomes "200pc". Nothing refers to these files by name (VCMI finds
+# templates by listing the directory). Any other character RISC OS can't
+# store stops the build.
+find "$APP/config" "$APP/Mods" -depth -name '*%*' | while read -r f; do
+  mv "$f" "$(dirname "$f")/$(basename "$f" | sed 's/%/pc/g')"
+done
+if find "$APP/config" "$APP/Mods" -name '*[$&@^#\\|":*<>]*' | grep .; then
+  echo "file names RISC OS can't hold" >&2; exit 1
+fi
 
 # Icon from VCMI's own.
 convert "$WORK/vcmi/clientapp/icons/vcmiclient.64x64.png" -resize 34x34 -depth 8 PNG32:"$WORK/icon34.png"

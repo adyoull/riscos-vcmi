@@ -1,7 +1,7 @@
 From 3cab41d796669d935b25b33d28ee311581c010b6 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:38:56 +0100
-Subject: [PATCH 03/10] RISC OS: directories and thread names
+Subject: [PATCH 03/11] RISC OS: directories and thread names
 
 VCMIDirsRISCOS: the program, config and Mods in <VCMI$Dir>, the Heroes III
 files in <VCMI$Data>, settings, saves and logs in <Choices$Write>.VCMI.

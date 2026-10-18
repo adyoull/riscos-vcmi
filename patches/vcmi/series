@@ -8,3 +8,4 @@
 0008-RISC-OS-the-server-always-runs-in-a-thread.patch
 0009-RISC-OS-no-libdl-the-AIs-are-linked-in.patch
 0010-RISC-OS-keep-the-desktop-running-while-the-game-load.patch
+0011-RISC-OS-CStopWatch-in-milliseconds.patch

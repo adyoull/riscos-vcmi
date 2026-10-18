@@ -14,6 +14,13 @@ First test build: VCMI 1.7.5 for RISC OS 5, not yet run on RISC OS.
   the window surface (tests/present); the frame limiter waits in
   Wimp_PollIdle; RISC OS defaults (software renderer, 50 fps, no vsync,
   no xBRZ, nearest scaling, no intro).
+- CStopWatch in milliseconds: UnixLib's clock() counts centiseconds, so
+  VCMI's CLOCKS_PER_SEC / 1000 was 0 (a division by zero at start-up).
+- Two random map templates named "...200%" are "...200pc" (% can't be in
+  a RISC OS file name).
+- Started in RISC OS for Linux (riscos-linux-testbed 0.9, no game data):
+  loads its config and built-in mod, writes its settings, and stops with
+  "VCMI requires Heroes III ... data files", as it should.
 - Libraries: Boost 1.83 (with a RISC OS statfs patch), minizip (zlib
   1.3.1), SDL2_image 2.6.3, SDL2_ttf 2.20.2, SDL2_mixer 2.6.3, riscos-mesa
   devkit 20.3.5-16 (SDL2, zlib), riscos-crossdev 1.8.2 (toolchain 1.4).

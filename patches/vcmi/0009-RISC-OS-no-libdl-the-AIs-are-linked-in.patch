@@ -1,7 +1,7 @@
 From ede47a787041b76ebc0c2a160a63fc0d2e9b1c89 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:10:19 +0100
-Subject: [PATCH 09/10] RISC OS: no libdl (the AIs are linked in)
+Subject: [PATCH 09/11] RISC OS: no libdl (the AIs are linked in)
 
 ---
  CMakeLists.txt | 2 +-

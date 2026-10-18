@@ -1,7 +1,7 @@
 From dd59ea251f0c1af9e06a00dbf03a27c0c0497382 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:39:12 +0100
-Subject: [PATCH 04/10] RISC OS: build without libsquish
+Subject: [PATCH 04/11] RISC OS: build without libsquish
 
 libsquish only decodes the HD Edition's DXT textures, too big for the
 machines RISC OS runs on; on RISC OS DdsFormat refuses them.
