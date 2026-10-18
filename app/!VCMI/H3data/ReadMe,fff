@@ -1,0 +1,26 @@
+Heroes of Might and Magic III files for VCMI
+============================================
+
+VCMI needs the files of Heroes of Might and Magic III: The Shadow of Death,
+or the Complete edition (GOG.com sells it; the CDs work too). They aren't
+included. Restoration of Erathia on its own and the HD Edition are not
+supported.
+
+Put these directories from the installed game here (in H3data):
+
+  Data   (H3bitmap.lod, H3sprite.lod, Heroes3.snd, VIDEO.VID, ...)
+  Maps
+  Mp3    (the music; optional)
+
+Or keep them anywhere and *Set VCMI$Data to the directory that holds
+Data, Maps and Mp3, e.g. in your !Boot:
+
+  Set VCMI$Data ADFS::HardDisc4.$.Games.Heroes3
+
+Getting them from the GOG installer: run it on Windows (or with Wine)
+and copy the three directories from where it installed the game, or
+unpack it with innoextract on Linux or macOS:
+
+  innoextract setup_heroes_of_might_and_magic_3_complete_4.0_(28740).exe
+
+then copy app/Data, app/Maps and app/Mp3.

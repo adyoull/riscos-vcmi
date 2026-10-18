@@ -1,0 +1,79 @@
+From dd59ea251f0c1af9e06a00dbf03a27c0c0497382 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:39:12 +0100
+Subject: [PATCH 04/10] RISC OS: build without libsquish
+
+libsquish only decodes the HD Edition's DXT textures, too big for the
+machines RISC OS runs on; on RISC OS DdsFormat refuses them.
+---
+ CMakeLists.txt                        | 4 +++-
+ client/CMakeLists.txt                 | 5 ++++-
+ client/render/hdEdition/DdsFormat.cpp | 8 ++++++++
+ 3 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 24f9200..46950e8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -551,7 +551,9 @@ if (ENABLE_CLIENT)
+ 		add_library(SDL2::TTF ALIAS SDL2_ttf::SDL2_ttf-static)
+ 	endif()
+ 
+-	find_package(libsquish REQUIRED)
++	if(NOT RISCOS)
++		find_package(libsquish REQUIRED)
++	endif()
+ endif()
+ 
+ if(ENABLE_LOBBY)
+diff --git a/client/CMakeLists.txt b/client/CMakeLists.txt
+index 232538e..e8f12ab 100644
+--- a/client/CMakeLists.txt
++++ b/client/CMakeLists.txt
+@@ -546,8 +546,11 @@ endif()
+ target_link_libraries(vcmiclientcommon PRIVATE vcmiservercommon)
+ 
+ target_link_libraries(vcmiclientcommon PUBLIC
+-		vcmi SDL2::SDL2 SDL2::Image SDL2::Mixer SDL2::TTF libsquish::libsquish
++		vcmi SDL2::SDL2 SDL2::Image SDL2::Mixer SDL2::TTF
+ )
++if(NOT RISCOS)
++	target_link_libraries(vcmiclientcommon PUBLIC libsquish::libsquish)
++endif()
+ 
+ if(ENABLE_VIDEO)
+ 	target_compile_definitions(vcmiclientcommon PRIVATE ENABLE_VIDEO)
+diff --git a/client/render/hdEdition/DdsFormat.cpp b/client/render/hdEdition/DdsFormat.cpp
+index ba2497e..60c64f3 100644
+--- a/client/render/hdEdition/DdsFormat.cpp
++++ b/client/render/hdEdition/DdsFormat.cpp
+@@ -12,7 +12,9 @@
+ #include "DdsFormat.h"
+ 
+ #include <SDL_surface.h>
++#ifndef VCMI_RISCOS
+ #include <squish.h>
++#endif
+ 
+ #include "../../../lib/filesystem/CInputStream.h"
+ 
+@@ -103,6 +105,11 @@ SDL_Surface * DdsFormat::load(CInputStream * stream, const std::string & cacheNa
+ 		h = hdr.height;
+ 
+ 		uint32_t fourcc = hdr.pixel_format.fourCC;
++#ifdef VCMI_RISCOS
++		// RISC OS: built without libsquish, so no HD Edition (DXT) textures
++		(void)fourcc;
++		return nullptr;
++#else
+ 		int squishFlags = 0;
+ 
+ 		if (fourcc == FOURCC('D','X','T','1'))
+@@ -121,6 +128,7 @@ SDL_Surface * DdsFormat::load(CInputStream * stream, const std::string & cacheNa
+ 
+ 		rgba = std::make_shared<std::vector<uint8_t>>(w * h * 4);
+ 		squish::DecompressImage(rgba->data(), w, h, comp.data(), squishFlags);
++#endif
+ 
+ 		// Insert decoded DDS into cache
+ 		{

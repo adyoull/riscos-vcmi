@@ -1,0 +1,59 @@
+From 9374a8a2edfe9632f7272b4f062ef4867f2fdd15 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 22:21:31 +0100
+Subject: [PATCH 10/10] RISC OS: keep the desktop running while the game loads
+
+The main thread waited for the loading thread in join(), without polling
+the Wimp, so the whole desktop stopped until loading finished. It now
+pumps SDL's events every 40 ms while it waits.
+---
+ clientapp/EntryPoint.cpp | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/clientapp/EntryPoint.cpp b/clientapp/EntryPoint.cpp
+index 263cf72..842a219 100644
+--- a/clientapp/EntryPoint.cpp
++++ b/clientapp/EntryPoint.cpp
+@@ -85,6 +85,12 @@ static void init()
+ 	//commandController.processCommand("translate maps", false);
+ }
+ 
++#ifdef VCMI_RISCOS
++static std::mutex loadingMutex;
++static std::condition_variable loadingCondition;
++static std::atomic<bool> loadingDone{false};
++#endif
++
+ static void checkForModLoadingFailure()
+ {
+ 	const auto & brokenMods = LIBRARY->identifiersHandler->getModsWithFailedRequests();
+@@ -317,6 +323,9 @@ int main(int argc, char * argv[])
+ 		std::thread loading([]()
+ 		{
+ 			setThreadName("initialize");
++#ifdef VCMI_RISCOS
++			struct Done { ~Done() { { std::lock_guard lock(loadingMutex); loadingDone = true; } loadingCondition.notify_all(); } } done;
++#endif
+ 			init();
+ 		});
+ #else
+@@ -329,6 +338,19 @@ int main(int argc, char * argv[])
+ 			CAndroidVMHelper vmHelper;
+ 			vmHelper.callStaticVoidMethod(CAndroidVMHelper::NATIVE_METHODS_DEFAULT_CLASS, "showProgress");
+ 	#endif // ANDROID
++#ifdef VCMI_RISCOS
++			// RISC OS: the desktop stops unless the program polls the Wimp
++			// every so often, and loading takes a while on a Pi. Poll every
++			// 40 ms; between polls the main thread waits on a condition, so
++			// the loading thread gets the processor.
++			while(!loadingDone.load())
++			{
++				if(ENGINE)
++					SDL_PumpEvents();
++				std::unique_lock lock(loadingMutex);
++				loadingCondition.wait_for(lock, std::chrono::milliseconds(40), [] { return loadingDone.load(); });
++			}
++#endif
+ 			loading.join();
+ 	#ifdef VCMI_ANDROID
+ 			vmHelper.callStaticVoidMethod(CAndroidVMHelper::NATIVE_METHODS_DEFAULT_CLASS, "hideProgress");

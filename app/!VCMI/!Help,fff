@@ -1,0 +1,70 @@
+VCMI for RISC OS
+================
+
+VCMI is an open-source engine for Heroes of Might and Magic III (Shadow
+of Death and Complete), the turn-based fantasy strategy game by New
+World Computing (1999). It plays the original game with its maps and
+campaigns, adds higher resolutions, a random map generator and many
+interface improvements, and can load mods.
+
+  VCMI:       https://vcmi.eu  https://github.com/vcmi/vcmi
+  This port:  https://github.com/adyoull/riscos-vcmi
+
+Version: see docs.Version.
+
+This is a TEST BUILD
+--------------------
+It has not been tried on RISC OS hardware yet. Please report what
+happens (see Problems below).
+
+You need the original game
+--------------------------
+VCMI uses the pictures, sounds, music and maps of the original Heroes
+III: Shadow of Death or Complete (GOG, CD). They aren't included. Copy
+the Data, Maps and Mp3 directories into !VCMI.H3data: H3data.ReadMe
+says how. Or keep them elsewhere and *Set VCMI$Data to their directory.
+
+What you need
+-------------
+- RISC OS 5 on an ARMv7 machine with VFP. A Raspberry Pi 4 is
+  recommended: the computer players do a lot of thinking, and RISC OS
+  gives the game one processor core.
+- The ARMEABISupport module and SharedUnixLibrary 1.16 or later (from
+  !PackMan) in !System.
+- For sound: SharedSoundBuffer and StreamManager, in ssb.zip on the
+  RDPClient page: https://orac.co.uk/software/rdpclient/rdpclient.html
+  John Duffell's own site (now on the Internet Archive) has more details:
+  https://web.archive.org/web/20110920080106/http://www.duffell.riscos.me.uk/
+  Merge ssb.zip's !System with yours. SharedSound is part of RISC OS.
+  Without them the game is silent.
+- Several hundred MB of free memory (not measured yet).
+
+Playing
+-------
+Double-click !VCMI. The game opens full screen (a desktop window that
+covers the screen, so other programs keep running).
+
+Settings, saved games and the log are kept in <Choices$Write>.VCMI.
+
+Not in this port (yet)
+----------------------
+- The films (intro, and the ones in towns and campaigns).
+- The launcher (VCMI's mod manager and data importer): mods have to be
+  copied into <Choices$Write>.VCMI.Mods by hand.
+- Online and network play.
+- HD Edition graphics.
+
+Problems
+--------
+Report them at https://github.com/adyoull/riscos-vcmi/issues with the
+logs: <Choices$Write>.VCMI.Cache.VCMI_Client_log/txt, and vcmilog (see
+!Run).
+
+Licence
+-------
+VCMI is free software under the GNU General Public License version 2
+or later (docs.COPYING). Its source and the RISC OS changes are at the
+addresses above. Heroes of Might and Magic III is (c) Ubisoft; its files
+are not part of this program.
+
+PThreadTicker is (c) its authors; see docs.PThreadTicker-Licence.

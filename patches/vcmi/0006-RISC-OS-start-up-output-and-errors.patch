@@ -1,0 +1,186 @@
+From cef0e4c950b4c0fb78a14b877f048971d5b3d21e Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:44:16 +0100
+Subject: [PATCH 06/10] RISC OS: start-up, output and errors
+
+riscos/riscos_platform: stdout and stderr go to VCMI$Log or nowhere (one
+file, as RISC OS allows a file to be open for writing once), fatal errors
+in a Wimp_ReportError box, and the C heap in 128 MB dynamic areas named
+"VCMI Heap". The client leaves the working directory alone (it is global
+on RISC OS) and starts no console thread (it would read the desktop's
+keyboard).
+---
+ clientapp/CMakeLists.txt   |  5 +++
+ clientapp/EntryPoint.cpp   | 16 ++++++++--
+ riscos/riscos_platform.cpp | 64 ++++++++++++++++++++++++++++++++++++++
+ riscos/riscos_platform.h   | 25 +++++++++++++++
+ 4 files changed, 108 insertions(+), 2 deletions(-)
+ create mode 100644 riscos/riscos_platform.cpp
+ create mode 100644 riscos/riscos_platform.h
+
+diff --git a/clientapp/CMakeLists.txt b/clientapp/CMakeLists.txt
+index 61caed1..e58b5a8 100644
+--- a/clientapp/CMakeLists.txt
++++ b/clientapp/CMakeLists.txt
+@@ -21,6 +21,11 @@ if(IOS)
+ 	)
+ endif()
+ 
++if(RISCOS)
++	set(clientapp_SRCS ${clientapp_SRCS} ${CMAKE_SOURCE_DIR}/riscos/riscos_platform.cpp)
++	set(clientapp_HEADERS ${clientapp_HEADERS} ${CMAKE_SOURCE_DIR}/riscos/riscos_platform.h)
++endif()
++
+ assign_source_group(${clientapp_SRCS} ${clientapp_HEADERS})
+ 
+ if(ANDROID)
+diff --git a/clientapp/EntryPoint.cpp b/clientapp/EntryPoint.cpp
+index 6adc6de..263cf72 100644
+--- a/clientapp/EntryPoint.cpp
++++ b/clientapp/EntryPoint.cpp
+@@ -29,6 +29,9 @@
+ 
+ #include "../lib/AsyncRunner.h"
+ #include "../lib/CConsoleHandler.h"
++#ifdef VCMI_RISCOS
++#include "../riscos/riscos_platform.h"
++#endif
+ #include "../lib/CConfigHandler.h"
+ #include "../lib/CThreadHelper.h"
+ #include "../lib/ExceptionsCommon.h"
+@@ -130,7 +133,11 @@ int main(int argc, char * argv[])
+ 	setenv("LANG", "C", 1);
+ #endif
+ 
+-#if !defined(VCMI_MOBILE)
++#ifdef VCMI_RISCOS
++	// Nothing may print in the desktop. The working directory is left alone
++	// (it is global on RISC OS): every path VCMI uses is absolute.
++	riscos::initOutput();
++#elif !defined(VCMI_MOBILE)
+ 	// Correct working dir executable folder (not bundle folder) so we can use executable relative paths
+ 	boost::filesystem::current_path(boost::filesystem::system_complete(argv[0]).parent_path());
+ #endif
+@@ -203,7 +210,8 @@ int main(int argc, char * argv[])
+ 	if(vm.count("logLocation"))
+ 		logPath = vm["logLocation"].as<std::string>() + "/VCMI_Client_log.txt";
+ 
+-#ifndef VCMI_IOS
++#if !defined(VCMI_IOS) && !defined(VCMI_RISCOS)
++	// (RISC OS: no console thread, it would read the desktop's keyboard)
+ 
+ 	auto callbackFunction = [](std::string buffer, bool calledFromIngameConsole)
+ 	{
+@@ -457,7 +465,11 @@ void handleFatalError(const std::string & message, bool terminate)
+ 
+ 	std::string messageToShow = "Fatal error! " + message;
+ 
++#ifdef VCMI_RISCOS
++	riscos::reportError(messageToShow);
++#else
+ 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Fatal error!", messageToShow.c_str(), nullptr);
++#endif
+ 
+ 	if (terminate)
+ 		throw std::runtime_error(message);
+diff --git a/riscos/riscos_platform.cpp b/riscos/riscos_platform.cpp
+new file mode 100644
+index 0000000..07c3089
+--- /dev/null
++++ b/riscos/riscos_platform.cpp
+@@ -0,0 +1,64 @@
++/*
++ * riscos_platform.cpp, part of the RISC OS port of VCMI
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#ifdef __riscos
++
++#include "riscos_platform.h"
++
++#include <kernel.h>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <unistd.h>
++
++// UnixLib: the C heap goes in dynamic areas ("VCMI Heap", then "VCMI Heap 2"...)
++// of at most 128 MB each, not in the WimpSlot. RISC OS reserves the whole
++// maximum of every area, so a bigger one wastes logical address space.
++// (declared in UnixLib's <features.h>; variables keep their plain names)
++const char * const __dynamic_da_name = "VCMI Heap";
++int __dynamic_da_max_size = 128 * 1024 * 1024;
++
++namespace riscos
++{
++void initOutput()
++{
++	const char * log = std::getenv("VCMI$Log");
++	const char * target = (log && *log) ? log : "/dev/null";
++	if(std::freopen(target, "w", stderr))
++	{
++		std::setvbuf(stderr, nullptr, _IOLBF, 0);
++		dup2(fileno(stderr), fileno(stdout));
++	}
++}
++
++void reportError(const std::string & message)
++{
++	struct
++	{
++		int number;
++		char text[252];
++	} error;
++	error.number = 0;
++	std::size_t n = 0;
++	for(char c : message)
++	{
++		if(n == sizeof(error.text) - 1)
++			break;
++		error.text[n++] = (c == '\n' || c == '\r') ? ' ' : c;
++	}
++	error.text[n] = 0;
++
++	_kernel_swi_regs r;
++	r.r[0] = reinterpret_cast<int>(&error);
++	r.r[1] = 1; // OK box
++	r.r[2] = reinterpret_cast<int>("VCMI");
++	_kernel_swi(0x400df /* Wimp_ReportError */, &r, &r);
++}
++}
++
++#endif
+diff --git a/riscos/riscos_platform.h b/riscos/riscos_platform.h
+new file mode 100644
+index 0000000..1c61448
+--- /dev/null
++++ b/riscos/riscos_platform.h
+@@ -0,0 +1,25 @@
++/*
++ * riscos_platform.h, part of the RISC OS port of VCMI
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#pragma once
++#ifdef __riscos
++
++#include <string>
++
++namespace riscos
++{
++/// stdout and stderr to the file named by VCMI$Log, else nowhere: nothing may
++/// print in the desktop. A file can be open for writing only once on RISC OS,
++/// so both streams share one.
++void initOutput();
++
++/// A desktop error box (Wimp_ReportError), titled VCMI.
++void reportError(const std::string & message);
++}
++
++#endif

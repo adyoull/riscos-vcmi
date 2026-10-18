@@ -1,0 +1,23 @@
+From f1554a5e51aa73956cd6790a100d68ceed39bace Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:40:06 +0100
+Subject: [PATCH 05/10] RISC OS: fuzzylite without backtraces (UnixLib has no
+ execinfo)
+
+---
+ AI/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/AI/CMakeLists.txt b/AI/CMakeLists.txt
+index 65642db..5abad96 100644
+--- a/AI/CMakeLists.txt
++++ b/AI/CMakeLists.txt
+@@ -23,7 +23,7 @@ if(NOT fuzzylite_FOUND)
+ 	set(FL_BUILD_BINARY OFF CACHE BOOL "")
+ 	set(FL_BUILD_SHARED OFF CACHE BOOL "")
+ 	set(FL_BUILD_TESTS OFF CACHE BOOL "")
+-	if(ANDROID)
++	if(ANDROID OR RISCOS)
+ 		set(FL_BACKTRACE OFF CACHE BOOL "" FORCE)
+ 	endif()
+ 

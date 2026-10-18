@@ -1,0 +1,98 @@
+From 3cab41d796669d935b25b33d28ee311581c010b6 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:38:56 +0100
+Subject: [PATCH 03/10] RISC OS: directories and thread names
+
+VCMIDirsRISCOS: the program, config and Mods in <VCMI$Dir>, the Heroes III
+files in <VCMI$Data>, settings, saves and logs in <Choices$Write>.VCMI.
+UnixLib has no prctl and no thread names: setThreadName only logs.
+---
+ lib/CThreadHelper.cpp |  4 +++-
+ lib/VCMIDirs.cpp      | 45 +++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+), 1 deletion(-)
+
+diff --git a/lib/CThreadHelper.cpp b/lib/CThreadHelper.cpp
+index 04dd4d8..d2e2f2f 100644
+--- a/lib/CThreadHelper.cpp
++++ b/lib/CThreadHelper.cpp
+@@ -15,7 +15,7 @@
+ #elif defined(VCMI_HAIKU)
+ 	#include <OS.h>
+ #elif !defined(VCMI_APPLE) && !defined(VCMI_FREEBSD) && \
+-	!defined(VCMI_HURD) && !defined(VCMI_OPENBSD)
++	!defined(VCMI_HURD) && !defined(VCMI_OPENBSD) && !defined(VCMI_RISCOS)
+ 	#include <sys/prctl.h>
+ #endif
+ 
+@@ -91,6 +91,8 @@ void setThreadName(const std::string &name)
+ 	pthread_setname_np(pthread_self(), name.c_str());
+ #elif defined(VCMI_HAIKU)
+ 	rename_thread(find_thread(NULL), name.c_str());
++#elif defined(VCMI_RISCOS)
++	// UnixLib threads have no names: the name is only used for logging
+ #elif defined(VCMI_UNIX)
+ 	prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
+ #else
+diff --git a/lib/VCMIDirs.cpp b/lib/VCMIDirs.cpp
+index d80e3b9..d4ef85b 100644
+--- a/lib/VCMIDirs.cpp
++++ b/lib/VCMIDirs.cpp
+@@ -439,6 +439,49 @@ void VCMIDirsAndroid::init()
+ 	IVCMIDirsUNIX::init();
+ }
+ 
++#elif defined(VCMI_RISCOS)
++// RISC OS: UnixLib turns "/<Var>/a/b" into "<Var>.a.b".
++//  <VCMI$Dir>      the application (!VCMI): the program, config/ and Mods/
++//  <VCMI$Data>     the Heroes III files (Data, Maps, Mp3...), set by !Run
++//  <Choices$Write> settings, saves, logs, extracted files
++class VCMIDirsRISCOS : public IVCMIDirsUNIX
++{
++public:
++	bfs::path userDataPath() const override;
++	bfs::path userCachePath() const override;
++	bfs::path userConfigPath() const override;
++
++	std::vector<bfs::path> dataPaths() const override;
++
++	bfs::path libraryPath() const override;
++	bfs::path binaryPath() const override;
++
++	std::string libraryName(const std::string& basename) const override;
++};
++
++bfs::path VCMIDirsRISCOS::userDataPath() const
++{
++	if(getenv("Choices$Write"))
++		return bfs::path("/<Choices$Write>") / "VCMI";
++	return bfs::path("/<VCMI$Dir>") / "User";
++}
++bfs::path VCMIDirsRISCOS::userCachePath() const { return userDataPath() / "Cache"; }
++bfs::path VCMIDirsRISCOS::userConfigPath() const { return userDataPath() / "Config"; }
++
++std::vector<bfs::path> VCMIDirsRISCOS::dataPaths() const
++{
++	// in VCMI's filesystem the last directory has the highest priority
++	std::vector<bfs::path> ret;
++	if(getenv("VCMI$Data"))
++		ret.push_back(bfs::path("/<VCMI$Data>"));
++	ret.push_back(bfs::path("/<VCMI$Dir>"));
++	return ret;
++}
++
++bfs::path VCMIDirsRISCOS::libraryPath() const { return "/<VCMI$Dir>"; }
++bfs::path VCMIDirsRISCOS::binaryPath() const { return "/<VCMI$Dir>"; }
++std::string VCMIDirsRISCOS::libraryName(const std::string& basename) const { return basename; }
++
+ #elif defined(VCMI_PORTMASTER)
+ class VCMIDirsPM : public IVCMIDirsUNIX
+ {
+@@ -643,6 +686,8 @@ namespace VCMIDirs
+ 			static VCMIDirsWIN32 singleton;
+ 		#elif defined(VCMI_ANDROID)
+ 			static VCMIDirsAndroid singleton;
++		#elif defined(VCMI_RISCOS)
++			static VCMIDirsRISCOS singleton;
+ 		#elif defined(VCMI_PORTMASTER)
+ 			static VCMIDirsPM singleton;
+ 		#elif defined(VCMI_XDG)

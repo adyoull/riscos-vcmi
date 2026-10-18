@@ -1,0 +1,24 @@
+--- a/libs/filesystem/src/operations.cpp
++++ b/libs/filesystem/src/operations.cpp
+@@ -51,17 +51,18 @@
+ #elif !defined(__APPLE__) && \
+     (!defined(__OpenBSD__) || BOOST_OS_BSD_OPEN >= BOOST_VERSION_NUMBER(4, 4, 0)) && \
+     !defined(__ANDROID__) && \
+-    !defined(__VXWORKS__)
++    !defined(__VXWORKS__) && \
++    !defined(__riscos)
+ #include <sys/statvfs.h>
+ #define BOOST_STATVFS statvfs
+ #define BOOST_STATVFS_F_FRSIZE vfs.f_frsize
+ #else
+ #ifdef __OpenBSD__
+ #include <sys/param.h>
+-#elif defined(__ANDROID__)
++#elif defined(__ANDROID__) || defined(__riscos)
+ #include <sys/vfs.h>
+ #endif
+-#if !defined(__VXWORKS__)
++#if !defined(__VXWORKS__) && !defined(__riscos)
+ #include <sys/mount.h>
+ #endif
+ #define BOOST_STATVFS statfs

@@ -1,0 +1,433 @@
+From 80189e1c6b43c40ffa1d5f27586ce44051a60cfc Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:38:28 +0100
+Subject: [PATCH 02/10] RISC OS: a stand-in for oneTBB
+
+riscos/tbb: serial parallel loops, real threads for task_group and
+task_arena (the AI needs at least 4 workers that can block), mutex-guarded
+concurrent containers. On RISC OS, TBB::tbb is an interface target with
+this include directory instead of find_package(TBB).
+---
+ CMakeLists.txt                        |   6 +-
+ riscos/tbb/blocked_range.h            |   2 +
+ riscos/tbb/blocked_range2d.h          |   2 +
+ riscos/tbb/concurrent_hash_map.h      |   2 +
+ riscos/tbb/concurrent_queue.h         |   2 +
+ riscos/tbb/concurrent_unordered_map.h |   2 +
+ riscos/tbb/concurrent_unordered_set.h |   2 +
+ riscos/tbb/concurrent_vector.h        |   2 +
+ riscos/tbb/global_control.h           |   2 +
+ riscos/tbb/parallel_for.h             |   2 +
+ riscos/tbb/parallel_invoke.h          |   2 +
+ riscos/tbb/parallel_reduce.h          |   2 +
+ riscos/tbb/task_arena.h               |   2 +
+ riscos/tbb/task_group.h               |   2 +
+ riscos/tbb/tbb.h                      |   2 +
+ riscos/tbb/tbbshim.h                  | 255 ++++++++++++++++++++++++++
+ 16 files changed, 288 insertions(+), 1 deletion(-)
+ create mode 100644 riscos/tbb/blocked_range.h
+ create mode 100644 riscos/tbb/blocked_range2d.h
+ create mode 100644 riscos/tbb/concurrent_hash_map.h
+ create mode 100644 riscos/tbb/concurrent_queue.h
+ create mode 100644 riscos/tbb/concurrent_unordered_map.h
+ create mode 100644 riscos/tbb/concurrent_unordered_set.h
+ create mode 100644 riscos/tbb/concurrent_vector.h
+ create mode 100644 riscos/tbb/global_control.h
+ create mode 100644 riscos/tbb/parallel_for.h
+ create mode 100644 riscos/tbb/parallel_invoke.h
+ create mode 100644 riscos/tbb/parallel_reduce.h
+ create mode 100644 riscos/tbb/task_arena.h
+ create mode 100644 riscos/tbb/task_group.h
+ create mode 100644 riscos/tbb/tbb.h
+ create mode 100644 riscos/tbb/tbbshim.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2aee250..24f9200 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -579,7 +579,11 @@ if(ENABLE_LAUNCHER OR ENABLE_EDITOR)
+ 	endif()
+ endif()
+ 
+-if(NOT ENABLE_MINIMAL_LIB)
++if(RISCOS)
++	# RISC OS: no oneTBB; riscos/tbb is a stand-in (see riscos/tbb/tbbshim.h)
++	add_library(TBB::tbb INTERFACE IMPORTED)
++	set_target_properties(TBB::tbb PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/riscos")
++elseif(NOT ENABLE_MINIMAL_LIB)
+ 	find_package(TBB REQUIRED)
+ endif()
+ 
+diff --git a/riscos/tbb/blocked_range.h b/riscos/tbb/blocked_range.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/blocked_range.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/blocked_range2d.h b/riscos/tbb/blocked_range2d.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/blocked_range2d.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/concurrent_hash_map.h b/riscos/tbb/concurrent_hash_map.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/concurrent_hash_map.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/concurrent_queue.h b/riscos/tbb/concurrent_queue.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/concurrent_queue.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/concurrent_unordered_map.h b/riscos/tbb/concurrent_unordered_map.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/concurrent_unordered_map.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/concurrent_unordered_set.h b/riscos/tbb/concurrent_unordered_set.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/concurrent_unordered_set.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/concurrent_vector.h b/riscos/tbb/concurrent_vector.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/concurrent_vector.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/global_control.h b/riscos/tbb/global_control.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/global_control.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/parallel_for.h b/riscos/tbb/parallel_for.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/parallel_for.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/parallel_invoke.h b/riscos/tbb/parallel_invoke.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/parallel_invoke.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/parallel_reduce.h b/riscos/tbb/parallel_reduce.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/parallel_reduce.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/task_arena.h b/riscos/tbb/task_arena.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/task_arena.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/task_group.h b/riscos/tbb/task_group.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/task_group.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/tbb.h b/riscos/tbb/tbb.h
+new file mode 100644
+index 0000000..c2a158f
+--- /dev/null
++++ b/riscos/tbb/tbb.h
+@@ -0,0 +1,2 @@
++#pragma once
++#include "tbbshim.h"
+diff --git a/riscos/tbb/tbbshim.h b/riscos/tbb/tbbshim.h
+new file mode 100644
+index 0000000..6e0f1ee
+--- /dev/null
++++ b/riscos/tbb/tbbshim.h
+@@ -0,0 +1,255 @@
++/*
++ * tbbshim.h, part of the RISC OS port of VCMI
++ *
++ * A stand-in for the parts of oneTBB that VCMI uses. RISC OS 5 gives a
++ * program one core; PThreadTicker time-slices its threads. So:
++ *  - parallel_for / parallel_reduce / parallel_invoke run serially in the
++ *    calling thread (max_concurrency() is 1, current_thread_index() is 0);
++ *  - task_group / task_arena run their work on real threads, because VCMI's
++ *    AI does blocking waits and needs at least 4 workers (lib/AsyncRunner.h);
++ *  - the concurrent containers take a mutex; concurrent_hash_map has one
++ *    recursive lock per map, held by an accessor until it is released.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#pragma once
++#include <cstddef>
++#include <type_traits>
++#include <deque>
++#include <functional>
++#include <mutex>
++#include <condition_variable>
++#include <thread>
++#include <unordered_map>
++#include <unordered_set>
++#include <utility>
++#include <vector>
++#include <queue>
++#include <list>
++#include <atomic>
++namespace tbb {
++template<typename T> class blocked_range {
++	T b_, e_; std::size_t g_;
++public:
++	using const_iterator = T;
++	blocked_range(T b, T e, std::size_t g = 1) : b_(b), e_(e), g_(g) {}
++	T begin() const { return b_; } T end() const { return e_; }
++	std::size_t size() const { return std::size_t(e_ - b_); }
++	bool empty() const { return !(b_ < e_); }
++	std::size_t grainsize() const { return g_; }
++	bool is_divisible() const { return false; }
++};
++template<typename R, typename C = R> class blocked_range2d {
++	blocked_range<R> r_; blocked_range<C> c_;
++public:
++	blocked_range2d(R rb, R re, std::size_t rg, C cb, C ce, std::size_t cg) : r_(rb, re, rg), c_(cb, ce, cg) {}
++	blocked_range2d(R rb, R re, C cb, C ce) : r_(rb, re), c_(cb, ce) {}
++	const blocked_range<R> & rows() const { return r_; }
++	const blocked_range<C> & cols() const { return c_; }
++	bool empty() const { return r_.empty() || c_.empty(); }
++};
++struct auto_partitioner {}; struct simple_partitioner {}; struct static_partitioner {};
++template<typename Range, typename Body> void parallel_for(const Range & r, const Body & b) { if(!r.empty()) b(r); }
++template<typename Range, typename Body, typename P, typename = std::enable_if_t<!std::is_integral_v<Range>>>
++void parallel_for(const Range & r, const Body & b, P &&) { if(!r.empty()) b(r); }
++template<typename Index, typename F, typename = std::enable_if_t<std::is_integral_v<Index>>>
++void parallel_for(Index first, Index last, const F & f) { for(Index i = first; i < last; ++i) f(i); }
++template<typename Index, typename F, typename = std::enable_if_t<std::is_integral_v<Index>>>
++void parallel_for(Index first, Index last, Index step, const F & f) { for(Index i = first; i < last; i += step) f(i); }
++template<typename Range, typename Value, typename Func, typename Reduction>
++Value parallel_reduce(const Range & r, const Value & identity, const Func & f, const Reduction &) { return r.empty() ? identity : f(r, identity); }
++
++template<typename... F> void parallel_invoke(F &&... f) { (f(), ...); }
++
++namespace detail {
++// Thread pool shared by every task_arena/task_group. Workers start on demand.
++class pool {
++	std::mutex m; std::condition_variable cv; std::deque<std::function<void()>> q;
++	std::vector<std::thread> workers; std::size_t idle = 0; bool stop = false;
++	void loop() {
++		std::unique_lock l(m);
++		for(;;) {
++			++idle; cv.wait(l, [&]{ return stop || !q.empty(); }); --idle;
++			if(q.empty()) return;
++			auto f = std::move(q.front()); q.pop_front();
++			l.unlock(); f(); l.lock();
++		}
++	}
++public:
++	static pool & get() { static pool p; return p; }
++	void submit(std::function<void()> f, std::size_t minWorkers) {
++		std::lock_guard l(m);
++		q.push_back(std::move(f));
++		// a new worker whenever none is idle, so blocked tasks never starve queued ones
++		if(idle < q.size() || workers.size() < minWorkers) workers.emplace_back([this]{ loop(); });
++		cv.notify_one();
++	}
++	~pool() { { std::lock_guard l(m); stop = true; } cv.notify_all(); for(auto & t : workers) t.join(); }
++};
++}
++class task_handle { public: std::function<void()> f; };
++class task_group {
++	std::mutex m; std::condition_variable cv; std::size_t pending = 0;
++	void done() { std::lock_guard l(m); if(--pending == 0) cv.notify_all(); }
++public:
++	template<typename F> task_handle defer(F && f) {
++		{ std::lock_guard l(m); ++pending; }
++		return task_handle{ [this, fn = std::function<void()>(std::forward<F>(f))]() mutable { fn(); done(); } };
++	}
++	template<typename F> void run(F && f) { detail::pool::get().submit(defer(std::forward<F>(f)).f, 1); }
++	void run(task_handle && h) { detail::pool::get().submit(std::move(h.f), 1); }
++	void wait() { std::unique_lock l(m); cv.wait(l, [&]{ return pending == 0; }); }
++	~task_group() { wait(); }
++};
++class task_arena {
++	int n_;
++public:
++	static constexpr int automatic = -1;
++	explicit task_arena(int n = automatic) : n_(n < 1 ? 1 : n) {}
++	void enqueue(task_handle && h) { detail::pool::get().submit(std::move(h.f), std::size_t(n_)); }
++	template<typename F> void enqueue(F && f) { detail::pool::get().submit(std::function<void()>(std::forward<F>(f)), std::size_t(n_)); }
++	template<typename F> auto execute(F && f) { return f(); }
++	int max_concurrency() const { return n_; }
++};
++namespace this_task_arena {
++	inline int max_concurrency() { return 1; }
++	inline int current_thread_index() { return 0; }
++}
++class global_control {
++public:
++	enum parameter { max_allowed_parallelism, thread_stack_size };
++	global_control(parameter, std::size_t) {}
++	static std::size_t active_value(parameter p) { return p == max_allowed_parallelism ? 1 : 0; }
++};
++
++template<typename T, typename A = std::allocator<T>> class concurrent_vector {
++	std::deque<T, A> d; mutable std::mutex m;
++public:
++	using value_type = T; using size_type = std::size_t;
++	using iterator = typename std::deque<T, A>::iterator; using const_iterator = typename std::deque<T, A>::const_iterator;
++	concurrent_vector() = default;
++	concurrent_vector(const concurrent_vector & o) : d(o.d) {}
++	concurrent_vector & operator=(const concurrent_vector & o) { d = o.d; return *this; }
++	iterator push_back(const T & v) { std::lock_guard l(m); d.push_back(v); return d.end() - 1; }
++	iterator push_back(T && v) { std::lock_guard l(m); d.push_back(std::move(v)); return d.end() - 1; }
++	template<typename... Args> iterator emplace_back(Args &&... a) { std::lock_guard l(m); d.emplace_back(std::forward<Args>(a)...); return d.end() - 1; }
++	void clear() { d.clear(); } size_type size() const { return d.size(); } bool empty() const { return d.empty(); }
++	void reserve(size_type) {}
++	T & operator[](size_type i) { return d[i]; } const T & operator[](size_type i) const { return d[i]; }
++	T & at(size_type i) { return d.at(i); } const T & at(size_type i) const { return d.at(i); }
++	T & back() { return d.back(); } T & front() { return d.front(); }
++	iterator begin() { return d.begin(); } iterator end() { return d.end(); }
++	const_iterator begin() const { return d.begin(); } const_iterator end() const { return d.end(); }
++	void resize(size_type n) { d.resize(n); }
++	void grow_to_at_least(size_type n) { std::lock_guard l(m); if(d.size() < n) d.resize(n); }
++};
++template<typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
++class concurrent_unordered_set {
++	std::unordered_set<K, H, E, A> s; mutable std::mutex m;
++public:
++	using iterator = typename std::unordered_set<K, H, E, A>::iterator; using const_iterator = typename std::unordered_set<K, H, E, A>::const_iterator;
++	std::pair<iterator, bool> insert(const K & k) { std::lock_guard l(m); return s.insert(k); }
++	template<typename... Args> std::pair<iterator, bool> emplace(Args &&... a) { std::lock_guard l(m); return s.emplace(std::forward<Args>(a)...); }
++	std::size_t count(const K & k) const { std::lock_guard l(m); return s.count(k); }
++	bool contains(const K & k) const { return count(k) != 0; }
++	iterator find(const K & k) { std::lock_guard l(m); return s.find(k); }
++	std::size_t size() const { return s.size(); } bool empty() const { return s.empty(); } void clear() { s.clear(); }
++	iterator begin() { return s.begin(); } iterator end() { return s.end(); }
++	const_iterator begin() const { return s.begin(); } const_iterator end() const { return s.end(); }
++};
++
++template<typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
++class concurrent_unordered_map {
++	std::unordered_map<K, V, H, E, A> mp; mutable std::mutex m;
++public:
++	using iterator = typename std::unordered_map<K, V, H, E, A>::iterator; using const_iterator = typename std::unordered_map<K, V, H, E, A>::const_iterator;
++	using value_type = typename std::unordered_map<K, V, H, E, A>::value_type;
++	std::pair<iterator, bool> insert(const value_type & v) { std::lock_guard l(m); return mp.insert(v); }
++	template<typename... Args> std::pair<iterator, bool> emplace(Args &&... a) { std::lock_guard l(m); return mp.emplace(std::forward<Args>(a)...); }
++	V & operator[](const K & k) { std::lock_guard l(m); return mp[k]; }
++	V & at(const K & k) { std::lock_guard l(m); return mp.at(k); }
++	const V & at(const K & k) const { std::lock_guard l(m); return mp.at(k); }
++	iterator find(const K & k) { std::lock_guard l(m); return mp.find(k); }
++	const_iterator find(const K & k) const { std::lock_guard l(m); return mp.find(k); }
++	std::size_t count(const K & k) const { std::lock_guard l(m); return mp.count(k); }
++	bool contains(const K & k) const { return count(k) != 0; }
++	std::size_t size() const { return mp.size(); } bool empty() const { return mp.empty(); } void clear() { mp.clear(); }
++	iterator begin() { return mp.begin(); } iterator end() { return mp.end(); }
++	const_iterator begin() const { return mp.begin(); } const_iterator end() const { return mp.end(); }
++};
++template<typename T, typename A = std::allocator<T>> class concurrent_queue {
++	std::deque<T, A> q; mutable std::mutex m;
++public:
++	void push(const T & v) { std::lock_guard l(m); q.push_back(v); }
++	void push(T && v) { std::lock_guard l(m); q.push_back(std::move(v)); }
++	template<typename... Args> void emplace(Args &&... a) { std::lock_guard l(m); q.emplace_back(std::forward<Args>(a)...); }
++	bool try_pop(T & out) { std::lock_guard l(m); if(q.empty()) return false; out = std::move(q.front()); q.pop_front(); return true; }
++	bool empty() const { std::lock_guard l(m); return q.empty(); }
++	std::size_t unsafe_size() const { std::lock_guard l(m); return q.size(); }
++	void clear() { std::lock_guard l(m); q.clear(); }
++};
++template<typename K> struct tbb_hash_compare {
++	static std::size_t hash(const K & k) { return std::hash<K>()(k); }
++	static bool equal(const K & a, const K & b) { return a == b; }
++};
++// One recursive lock per map: an accessor holds it until released or destroyed.
++template<typename K, typename V, typename HC = tbb_hash_compare<K>, typename A = std::allocator<std::pair<const K, V>>>
++class concurrent_hash_map {
++	struct H { std::size_t operator()(const K & k) const { return HC().hash(k); } };
++	struct E { bool operator()(const K & a, const K & b) const { return HC().equal(a, b); } };
++	using map_t = std::unordered_map<K, V, H, E>;
++	map_t mp; mutable std::recursive_mutex m;
++public:
++	using key_type = K; using mapped_type = V; using value_type = std::pair<const K, V>; using size_type = std::size_t;
++	using iterator = typename map_t::iterator; using const_iterator = typename map_t::const_iterator;
++	class const_accessor {
++		friend class concurrent_hash_map;
++	protected:
++		std::unique_lock<std::recursive_mutex> lock; value_type * p = nullptr;
++	public:
++		const_accessor() = default;
++		const_accessor(const const_accessor &) = delete;
++		~const_accessor() { release(); }
++		bool empty() const { return p == nullptr; }
++		void release() { p = nullptr; if(lock.owns_lock()) lock.unlock(); lock = {}; }
++		const value_type & operator*() const { return *p; }
++		const value_type * operator->() const { return p; }
++	};
++	class accessor : public const_accessor {
++	public:
++		value_type & operator*() const { return *this->p; }
++		value_type * operator->() const { return this->p; }
++	};
++	concurrent_hash_map() = default;
++	concurrent_hash_map(const concurrent_hash_map & o) { std::lock_guard l(o.m); mp = o.mp; }
++	concurrent_hash_map & operator=(const concurrent_hash_map & o) { if(this != &o) { std::scoped_lock l(m, o.m); mp = o.mp; } return *this; }
++private:
++	template<typename Acc> bool lookup(Acc & a, const K & k, bool create) {
++		a.release(); a.lock = std::unique_lock(m);
++		auto it = mp.find(k); bool added = false;
++		if(it == mp.end()) { if(!create) { a.release(); return false; } it = mp.emplace(k, V()).first; added = true; }
++		a.p = reinterpret_cast<value_type *>(&*it); return create ? added : true;
++	}
++public:
++	bool find(const_accessor & a, const K & k) const { return const_cast<concurrent_hash_map *>(this)->lookup(a, k, false); }
++	bool find(accessor & a, const K & k) { return lookup(a, k, false); }
++	bool insert(const_accessor & a, const K & k) { return lookup(a, k, true); }
++	bool insert(accessor & a, const K & k) { return lookup(a, k, true); }
++	bool insert(const_accessor & a, const value_type & v) { bool n = lookup(a, v.first, true); if(n) a.p->second = v.second; return n; }
++	bool insert(accessor & a, const value_type & v) { bool n = lookup(a, v.first, true); if(n) a.p->second = v.second; return n; }
++	bool insert(const value_type & v) { std::lock_guard l(m); return mp.insert(v).second; }
++	template<typename... Args> bool emplace(Args &&... a) { std::lock_guard l(m); return mp.emplace(std::forward<Args>(a)...).second; }
++	bool erase(const K & k) { std::lock_guard l(m); return mp.erase(k) != 0; }
++	bool erase(const_accessor & a) { if(a.empty()) return false; K k = a.p->first; a.p = nullptr; bool r = mp.erase(k) != 0; a.release(); return r; }
++	bool erase(accessor & a) { return erase(static_cast<const_accessor &>(a)); }
++	size_type count(const K & k) const { std::lock_guard l(m); return mp.count(k); }
++	void clear() { std::lock_guard l(m); mp.clear(); }
++	size_type size() const { return mp.size(); } bool empty() const { return mp.empty(); }
++	iterator begin() { return mp.begin(); } iterator end() { return mp.end(); }
++	const_iterator begin() const { return mp.begin(); } const_iterator end() const { return mp.end(); }
++};
++template<typename K> using tbb_hash = std::hash<K>;
++}

@@ -1,0 +1,10 @@
+0001-RISC-OS-platform-detection-and-UnixLib-compatibility.patch
+0002-RISC-OS-a-stand-in-for-oneTBB.patch
+0003-RISC-OS-directories-and-thread-names.patch
+0004-RISC-OS-build-without-libsquish.patch
+0005-RISC-OS-fuzzylite-without-backtraces-UnixLib-has-no-.patch
+0006-RISC-OS-start-up-output-and-errors.patch
+0007-RISC-OS-present-only-what-changed.patch
+0008-RISC-OS-the-server-always-runs-in-a-thread.patch
+0009-RISC-OS-no-libdl-the-AIs-are-linked-in.patch
+0010-RISC-OS-keep-the-desktop-running-while-the-game-load.patch

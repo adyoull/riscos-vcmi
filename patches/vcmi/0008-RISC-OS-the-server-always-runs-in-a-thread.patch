@@ -1,0 +1,40 @@
+From 30b1215915bbfc63689c4f43298d32d475012516 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 22:07:49 +0100
+Subject: [PATCH 08/10] RISC OS: the server always runs in a thread
+
+There are no processes to run vcmiserver in (and Boost.Process needs
+sigtimedwait, which UnixLib lacks).
+---
+ client/CServerHandler.cpp | 2 +-
+ client/ServerRunner.h     | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/client/CServerHandler.cpp b/client/CServerHandler.cpp
+index 3a6928a..914c71a 100644
+--- a/client/CServerHandler.cpp
++++ b/client/CServerHandler.cpp
+@@ -184,7 +184,7 @@ INetworkHandler & CServerHandler::getNetworkHandler()
+ void CServerHandler::startLocalServerAndConnect(bool connectToLobby)
+ {
+ 	logNetwork->trace("\tLocal server startup has been requested");
+-#ifdef VCMI_MOBILE
++#if defined(VCMI_MOBILE) || defined(VCMI_RISCOS)
+ 	// mobile apps can't spawn separate processes - only thread mode is available
+ 	serverRunner.reset(new ServerThreadRunner());
+ #else
+diff --git a/client/ServerRunner.h b/client/ServerRunner.h
+index d0edf9a..50b4232 100644
+--- a/client/ServerRunner.h
++++ b/client/ServerRunner.h
+@@ -52,8 +52,9 @@ public:
+ 	~ServerThreadRunner();
+ };
+ 
+-#ifndef VCMI_MOBILE
++#if !defined(VCMI_MOBILE) && !defined(VCMI_RISCOS)
+ // Enable support for running vcmiserver as separate process. Unavailable on mobile systems
++// (and on RISC OS, which has no processes to run it in)
+ #define ENABLE_SERVER_PROCESS
+ #endif
+ 

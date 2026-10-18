@@ -1,0 +1,22 @@
+From ede47a787041b76ebc0c2a160a63fc0d2e9b1c89 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 22:10:19 +0100
+Subject: [PATCH 09/10] RISC OS: no libdl (the AIs are linked in)
+
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 46950e8..2da27bd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -483,7 +483,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR NOT WIN32)
+ 		set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fstandalone-debug")
+ 	endif()
+ 
+-	if(UNIX)
++	if(UNIX AND NOT RISCOS)
+ 		set(SYSTEM_LIBS ${SYSTEM_LIBS} ${CMAKE_DL_LIBS})
+ 	endif()
+ endif()
