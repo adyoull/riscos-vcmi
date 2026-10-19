@@ -22,6 +22,7 @@ Tests (host, need libsdl2-dev):
 ```
 tests/tbbshim/run.sh    # TBB stand-in, ThreadSanitizer and ASan/UBSan
 tests/present/run.sh    # presenter against a simple reference, ASan/UBSan
+tests/sound/run.sh      # sound feeding into a simulated SharedSoundBuffer, ASan/UBSan and TSan
 ```
 
 Editing the patches: commit in `work/vcmi` (branch `riscos`), then

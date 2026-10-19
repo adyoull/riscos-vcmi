@@ -1,5 +1,24 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos5test (not released)
+- Sound without SDL's audio thread. SDL2_mixer mixes on request
+  (patches/sdl2_mixer/0002: Mix_OpenAudioExternal, Mix_MixAudioExternal) and
+  riscos/riscos_sound.cpp hands its 23 ms blocks straight to
+  SharedSoundBuffer, keeping about 190 ms queued (was about 370 ms). The queue
+  is topped up from whichever thread is running: every frame and between the
+  frame limiter's waits, the loading loop, every network pack the client and
+  the server handle, the AI's parallel_for loops (the TBB stand-in now runs a
+  blocked_range in up to 16 pieces with the hook between them), and a feeding
+  thread of its own. A thread inside the mixer (a decoder reading its file)
+  skips it.
+- The log keeps info and above by default (it was trace: about 170 lines a
+  second, mostly network packs, each written to the card).
+- The frame limiter waits in steps of at most a centisecond, so 30 fps no
+  longer comes out at 20-25.
+- The vcmilog now has the presenter's figures ("Present:") and, in the
+  "Frames:" line, who fed the sound, the least queued and how often it ran
+  dry.
+
 ## 1.7.5-riscos4test (not released)
 - The sound stopped for up to 1.4 s when a hero moved onto another terrain
   (the riscos3test log: sound gaps of 0.2-1.4 s, matching the longest

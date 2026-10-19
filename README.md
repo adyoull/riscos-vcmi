@@ -14,10 +14,10 @@ to play; see `app/!VCMI/H3data/ReadMe,fff`.
 - `patches/vcmi/`: `git am` on VCMI's tag 1.7.5 (`series` gives the order).
 - `patches/boost/`: one patch for Boost 1.83 (UnixLib has statfs, not statvfs).
 - `patches/sdl2_mixer/`: a seek table for MP3 music (resuming a track no longer
-  stops the sound).
+  stops the sound) and mixing on request without an SDL audio device.
 - `build/`: `build-deps.sh`, `build-vcmi.sh`, `package.sh`, versions and
   checksums (`env.sh`, `SHA256SUMS.txt`). See BUILDING.md.
-- `tests/`: host tests of the TBB stand-in and of the presenter.
+- `tests/`: host tests of the TBB stand-in, the presenter and the sound feeding.
 - `app/!VCMI`: `!Run`, `!Boot`, `!Help`, the data folder's ReadMe.
 - `tools/gogimport/!GOGImport`: a desktop tool that unpacks the game's
   files from the GOG.com installer on RISC OS (drag the installer onto it).

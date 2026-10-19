@@ -42,6 +42,10 @@ public:
 	~AsyncRunner() { wait(); }
 };
 
+// the RISC OS progress hook (riscos/riscos_progress.h), counted
+static int progressCalls = 0;
+extern "C" void riscos_progress_hook(void) { progressCalls++; }
+
 static void loops()
 {
 	std::vector<int> v(1000, 0);
@@ -55,6 +59,32 @@ static void loops()
 	int calls = 0;
 	tbb::parallel_for(tbb::blocked_range<size_t>(5, 5), [&](const tbb::blocked_range<size_t> &) { ++calls; });
 	CHECK(calls == 0);  // empty range: body not called
+
+	// pieces: every index exactly once, at most 16 pieces, none below the
+	// grain size (but the last), the progress hook between pieces
+	for(size_t n : {1u, 2u, 15u, 16u, 17u, 100u, 1000u, 12345u})
+		for(size_t g : {1u, 3u, 10u, 2000u})
+		{
+			std::vector<int> seen(n, 0);
+			int pieces = 0, small = 0;
+			int before = progressCalls;
+			tbb::parallel_for(tbb::blocked_range<size_t>(0, n, g), [&](const tbb::blocked_range<size_t> & r) {
+				pieces++;
+				if(r.size() < g && r.end() != n) small++;
+				for(size_t i = r.begin(); i != r.end(); ++i) seen[i]++;
+			});
+			bool once = true;
+			for(int x : seen) once = once && x == 1;
+			CHECK(once);
+			CHECK(pieces >= 1 && pieces <= 16);
+			CHECK(small == 0);
+			CHECK(progressCalls - before == pieces);
+		}
+	{
+		int before = progressCalls;
+		tbb::parallel_for(0, 640, [&](int) {});
+		CHECK(progressCalls - before == 10); // every 64th index
+	}
 
 	int cells = 0;
 	tbb::parallel_for(tbb::blocked_range2d<int>(0, 7, 2, 0, 9, 2), [&](const tbb::blocked_range2d<int> & r) {

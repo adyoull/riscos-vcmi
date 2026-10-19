@@ -1,7 +1,7 @@
 From 0e305795ac40856bdc5408dd95de021672cf9874 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:44:16 +0100
-Subject: [PATCH 06/15] RISC OS: start-up, output and errors
+Subject: [PATCH 06/16] RISC OS: start-up, output and errors
 
 riscos/riscos_platform: stdout and stderr go to VCMI$Log or nowhere (one
 file, as RISC OS allows a file to be open for writing once), fatal errors

@@ -1,0 +1,796 @@
+From 6fc06b1227a991860ed609ff0d19c32dd630280f Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 16:21:03 +0100
+Subject: [PATCH 16/16] RISC OS: sound fed from any running thread, log at
+ info, finer frame waits
+
+SDL's audio thread is not used. CAudioBase opens SDL_mixer with
+Mix_OpenAudioExternal and riscos/riscos_sound.cpp gives SharedSoundBuffer
+23 ms blocks, keeping about 190 ms queued. The queue is topped up by the
+frame loop (every frame and between the limiter's waits), the loading loop,
+the client's and server's pack handling, the TBB stand-in's parallel_for
+(a blocked_range now runs in up to 16 pieces, the hook between them) and a
+feeding thread. riscos_progress.h declares the hook (weak).
+
+The default log level is info (trace wrote about 170 lines a second). The
+frame limiter waits a centisecond at a time (longer SDL_Delays rounded up,
+giving 20-25 fps for 30). The presenter's figures and the sound feeding go
+to the VCMI$Log file.
+---
+ client/CMakeLists.txt              |   1 +
+ client/Client.cpp                  |   6 +
+ client/gui/FramerateManager.cpp    |   6 +-
+ client/media/CAudioBase.cpp        |  28 ++-
+ client/renderSDL/ScreenHandler.cpp |   8 +-
+ clientapp/EntryPoint.cpp           |   2 +
+ config/schemas/settings.json       |   2 +-
+ riscos/riscos_platform.cpp         |  14 +-
+ riscos/riscos_platform.h           |   3 +
+ riscos/riscos_present.cpp          |  14 +-
+ riscos/riscos_progress.h           |  17 ++
+ riscos/riscos_sound.cpp            | 323 +++++++++++++++++++++++++++++
+ riscos/riscos_sound.h              |  56 +++++
+ riscos/tbb/tbbshim.h               |  29 ++-
+ server/CGameHandler.cpp            |   6 +
+ 15 files changed, 489 insertions(+), 26 deletions(-)
+ create mode 100644 riscos/riscos_progress.h
+ create mode 100644 riscos/riscos_sound.cpp
+ create mode 100644 riscos/riscos_sound.h
+
+diff --git a/client/CMakeLists.txt b/client/CMakeLists.txt
+index 17ec548..159cda5 100644
+--- a/client/CMakeLists.txt
++++ b/client/CMakeLists.txt
+@@ -547,6 +547,7 @@ if(RISCOS)
+ 	target_sources(vcmiclientcommon PRIVATE
+ 		${CMAKE_SOURCE_DIR}/riscos/riscos_present.cpp
+ 		${CMAKE_SOURCE_DIR}/riscos/riscos_present_neon.cpp
++		${CMAKE_SOURCE_DIR}/riscos/riscos_sound.cpp
+ 	)
+ 	# only this file uses NEON; the presenter calls it if SDL_HasNEON()
+ 	set_source_files_properties(${CMAKE_SOURCE_DIR}/riscos/riscos_present_neon.cpp PROPERTIES COMPILE_OPTIONS "-mfpu=neon")
+diff --git a/client/Client.cpp b/client/Client.cpp
+index adad66c..f936f38 100644
+--- a/client/Client.cpp
++++ b/client/Client.cpp
+@@ -8,6 +8,9 @@
+  *
+  */
+ #include "StdInc.h"
++#ifdef VCMI_RISCOS
++#include "../riscos/riscos_progress.h"
++#endif
+ #include "Global.h"
+ #include "Client.h"
+ 
+@@ -363,6 +366,9 @@ void CClient::handlePack(CPackForClient & pack)
+ 	logNetwork->trace("\tApplied on gs: %s", typeid(pack).name());
+ 	pack.visit(afterVisitor);
+ 	logNetwork->trace("\tMade second apply on cl: %s", typeid(pack).name());
++#ifdef VCMI_RISCOS
++	VCMI_RISCOS_PROGRESS(); // tops the sound up (riscos/riscos_sound.cpp)
++#endif
+ }
+ 
+ std::optional<BattleAction> CClient::makeSurrenderRetreatDecision(PlayerColor player, const BattleID & battleID, const BattleStateInfoForRetreat & battleState)
+diff --git a/client/gui/FramerateManager.cpp b/client/gui/FramerateManager.cpp
+index 9a58c02..5c2f67f 100644
+--- a/client/gui/FramerateManager.cpp
++++ b/client/gui/FramerateManager.cpp
+@@ -36,6 +36,9 @@ void FramerateManager::framerateDelay()
+ 	// RISC OS: SDL_Delay waits in Wimp_PollIdle, so the desktop gets the time.
+ 	// It can return up to a centisecond early: wait again while 5 ms or more
+ 	// remain (as the Julius port does).
++	// The sound is topped up every frame, and between waits of at most a
++	// centisecond (the clock's step): a longer SDL_Delay rounds up a whole
++	// centisecond, which made 30 fps come out as 20-25.
+ 	riscos::frameDrawn(static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(timeSpentBusy).count()));
+ 	timeSpentBusy = Clock::now() - lastTimePoint;
+ 	const Duration busy = timeSpentBusy;
+@@ -44,7 +47,8 @@ void FramerateManager::framerateDelay()
+ 		auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(targetFrameTime - timeSpentBusy);
+ 		if(remaining < std::chrono::milliseconds(5))
+ 			break;
+-		SDL_Delay(static_cast<Uint32>(remaining.count()));
++		SDL_Delay(static_cast<Uint32>(std::min<long long>(remaining.count(), 10)));
++		riscos::framePoll();
+ 		timeSpentBusy = Clock::now() - lastTimePoint;
+ 	}
+ 	riscos::frameWaited(static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(timeSpentBusy - busy).count()));
+diff --git a/client/media/CAudioBase.cpp b/client/media/CAudioBase.cpp
+index 6e03628..873722b 100644
+--- a/client/media/CAudioBase.cpp
++++ b/client/media/CAudioBase.cpp
+@@ -13,6 +13,7 @@
+ #include <SDL_mixer.h>
+ #ifdef VCMI_RISCOS
+ #include "../../riscos/riscos_platform.h"
++#include "../../riscos/riscos_sound.h"
+ #endif
+ 
+ int CAudioBase::initializationCounter = 0;
+@@ -23,22 +24,23 @@ CAudioBase::CAudioBase()
+ 	if(initializationCounter == 0)
+ 	{
+ #ifdef VCMI_RISCOS
+-		// RISC OS: SDL's sound runs on a thread the PThreadTicker switches to;
+-		// 1024 samples underran in other ports (fheroes2, Freeciv use 4096).
+-		const int chunkSize = 4096;
+-#else
+-		const int chunkSize = 1024;
+-#endif
+-		if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, chunkSize) == -1)
+-			logGlobal->error("Mix_OpenAudio error: %s", Mix_GetError());
++		// RISC OS: no SDL audio thread. The mixer's blocks go straight to
++		// SharedSoundBuffer from whichever thread is running (riscos_sound).
++		std::string why;
++		if(!riscos::soundStart(why))
++			logGlobal->warn("No sound: %s", why);
+ 		else
+ 		{
+ 			initializeSuccess = true;
+-#ifdef VCMI_RISCOS
+-			// For the log: when SDL's sound thread mixes (see riscos_platform)
++			// For the log: when sound is mixed (see riscos_platform)
+ 			Mix_SetPostMix([](void *, Uint8 *, int) { riscos::soundMixed(); }, nullptr);
+-#endif
+ 		}
++#else
++		if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 1024) == -1)
++			logGlobal->error("Mix_OpenAudio error: %s", Mix_GetError());
++		else
++			initializeSuccess = true;
++#endif
+ 	}
+ 	++initializationCounter;
+ }
+@@ -54,7 +56,11 @@ CAudioBase::~CAudioBase()
+ 
+ 	if(initializationCounter == 0 && initializeSuccess)
+ 	{
++#ifdef VCMI_RISCOS
++		riscos::soundStop(); // closes the mixer too
++#else
+ 		Mix_CloseAudio();
++#endif
+ 		initializeSuccess = false;
+ 	}
+ }
+diff --git a/client/renderSDL/ScreenHandler.cpp b/client/renderSDL/ScreenHandler.cpp
+index b13fd06..9dfc5c3 100644
+--- a/client/renderSDL/ScreenHandler.cpp
++++ b/client/renderSDL/ScreenHandler.cpp
+@@ -235,16 +235,14 @@ ScreenHandler::ScreenHandler()
+ #endif
+ 
+ #ifdef VCMI_RISCOS
+-	// RISC OS: sound needs SharedSoundBuffer and StreamManager (not part of
+-	// RISC OS) and game controllers may not be there: without them the game
+-	// runs silent instead of stopping.
++	// RISC OS: sound doesn't go through SDL's audio (riscos/riscos_sound.cpp
++	// feeds SharedSoundBuffer itself) and game controllers may not be there:
++	// without them the game carries on.
+ 	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
+ 	{
+ 		logGlobal->error("Something was wrong: %s", SDL_GetError());
+ 		exit(-1);
+ 	}
+-	if(SDL_InitSubSystem(SDL_INIT_AUDIO))
+-		logGlobal->warn("No sound: %s", SDL_GetError());
+ 	if(SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER))
+ 		logGlobal->warn("No game controllers: %s", SDL_GetError());
+ #else
+diff --git a/clientapp/EntryPoint.cpp b/clientapp/EntryPoint.cpp
+index 842a219..a4f60d7 100644
+--- a/clientapp/EntryPoint.cpp
++++ b/clientapp/EntryPoint.cpp
+@@ -31,6 +31,7 @@
+ #include "../lib/CConsoleHandler.h"
+ #ifdef VCMI_RISCOS
+ #include "../riscos/riscos_platform.h"
++#include "../riscos/riscos_progress.h"
+ #endif
+ #include "../lib/CConfigHandler.h"
+ #include "../lib/CThreadHelper.h"
+@@ -347,6 +348,7 @@ int main(int argc, char * argv[])
+ 			{
+ 				if(ENGINE)
+ 					SDL_PumpEvents();
++				VCMI_RISCOS_PROGRESS(); // the sound, once it's started
+ 				std::unique_lock lock(loadingMutex);
+ 				loadingCondition.wait_for(lock, std::chrono::milliseconds(40), [] { return loadingDone.load(); });
+ 			}
+diff --git a/config/schemas/settings.json b/config/schemas/settings.json
+index c47561a..2b1f879 100644
+--- a/config/schemas/settings.json
++++ b/config/schemas/settings.json
+@@ -691,7 +691,7 @@
+ 				},
+ 				"loggers" : {
+ 					"type" : "array",
+-					"default" : [ { "domain" : "global", "level" : "trace" }, { "domain" : "rng", "level" : "info" } ],
++					"default" : [ { "domain" : "global", "level" : "info" }, { "domain" : "rng", "level" : "info" } ],
+ 					"items" : {
+ 						"type" : "object",
+ 						"additionalProperties" : false,
+diff --git a/riscos/riscos_platform.cpp b/riscos/riscos_platform.cpp
+index db527ff..36d0f76 100644
+--- a/riscos/riscos_platform.cpp
++++ b/riscos/riscos_platform.cpp
+@@ -9,6 +9,7 @@
+ #ifdef __riscos
+ 
+ #include "riscos_platform.h"
++#include "riscos_sound.h"
+ 
+ #include <kernel.h>
+ #include <atomic>
+@@ -117,8 +118,14 @@ void frameWaited(int waitedMs)
+ 	stats.waited += waitedMs;
+ }
+ 
++void framePoll()
++{
++	soundPollFrom(SoundCaller::Frame);
++}
++
+ void frameDrawn(int busyMs)
+ {
++	soundPollFrom(SoundCaller::Frame);
+ 	// One round of the other threads: a thread with nothing to do hands the
+ 	// turn straight on, so this costs little.
+ 	sched_yield();
+@@ -142,10 +149,13 @@ void frameDrawn(int busyMs)
+ 	int m = mixes.exchange(0);
+ 	int gap = longestGap.exchange(0);
+ 	int gaps = longGaps.exchange(0);
++	SoundStats ss = soundStats();
+ 	std::fprintf(stderr, "Frames: %d in %.1f s (%.1f fps), drawing %lld ms (longest %d), waiting %lld ms; "
+-		"sound: %d blocks mixed, longest gap %d ms, %d gaps over 200 ms\n",
++		"sound: %d blocks mixed (by the frame loop %d, its thread %d, others %d), least queued %d ms, "
++		"ran dry %d times, longest gap %d ms\n",
+ 		stats.frames, elapsed / 1000.0, stats.frames * 1000.0 / elapsed, stats.busy, stats.busyMax,
+-		stats.waited, m, gap, gaps);
++		stats.waited, m, ss.byFrame, ss.byThread, ss.byOther, ss.minQueuedMs, ss.dry, gap);
++	(void)gaps;
+ 	stats.frames = 0;
+ 	stats.busy = 0;
+ 	stats.busyMax = 0;
+diff --git a/riscos/riscos_platform.h b/riscos/riscos_platform.h
+index ac2bd26..9aad7d5 100644
+--- a/riscos/riscos_platform.h
++++ b/riscos/riscos_platform.h
+@@ -31,6 +31,9 @@ void frameDrawn(int busyMs);
+ /// Called by the frame limiter with the time it waited (in Wimp_PollIdle).
+ void frameWaited(int waitedMs);
+ 
++/// Called by the frame limiter between its short waits: tops the sound up.
++void framePoll();
++
+ /// Called by SDL_mixer each time it has mixed a block of sound (the sound
+ /// thread). Only counts, for the log.
+ void soundMixed();
+diff --git a/riscos/riscos_present.cpp b/riscos/riscos_present.cpp
+index dea19ad..d1e132d 100644
+--- a/riscos/riscos_present.cpp
++++ b/riscos/riscos_present.cpp
+@@ -19,7 +19,17 @@
+ #include <SDL.h>
+ 
+ #include <algorithm>
++#include <cstdio>
+ #include <cstdlib>
++
++// On RISC OS the figures go to stderr, which is the VCMI$Log file (next to
++// the frame and sound figures); VCMI only passes SDL's messages on to its
++// own log at debug level, which the RISC OS build doesn't keep.
++#ifdef __riscos
++#define PRESENT_LOG(...) (std::fprintf(stderr, __VA_ARGS__), std::fputc('\n', stderr))
++#else
++#define PRESENT_LOG(...) SDL_Log(__VA_ARGS__)
++#endif
+ #include <cstring>
+ 
+ namespace riscos
+@@ -148,7 +158,7 @@ bool setup(SDL_Surface * surface, int sw, int sh)
+ #endif
+ 	p.full = true;
+ 	p.drawnPointer.shown = false;
+-	SDL_Log("RISC OS presenter: %d x %d shown in %d x %d (%s, %s; %s compare)", sw, sh, p.dw, p.dh,
++	PRESENT_LOG("RISC OS presenter: %d x %d shown in %d x %d (%s, %s; %s compare)", sw, sh, p.dw, p.dh,
+ 		SDL_GetPixelFormatName(p.format), p.direct ? (p.swap ? "drawn, red and blue swapped" : "drawn") : "by SDL",
+ 		p.differ == pixelsDifferWords ? "word" : "NEON");
+ 	return true;
+@@ -499,7 +509,7 @@ void presentFrame(SDL_Window * window, SDL_Surface * screen)
+ 	p.ticks += SDL_GetPerformanceCounter() - start;
+ 	if(now - p.statsStart >= STATS_INTERVAL_MS && p.frames && p.cols)
+ 	{
+-		SDL_Log("Present: %u frames (%u full), %.1f%% of cells changed, %u pixels drawn a frame, %.2f ms a frame",
++		PRESENT_LOG("Present: %u frames (%u full), %.1f%% of cells changed, %u pixels drawn a frame, %.2f ms a frame",
+ 			p.frames, p.fullFrames, 100.0 * p.cells / (static_cast<double>(p.frames) * p.cols * p.bands),
+ 			p.pixels / p.frames, p.ticks * 1000.0 / SDL_GetPerformanceFrequency() / p.frames);
+ 		p.statsStart = now;
+diff --git a/riscos/riscos_progress.h b/riscos/riscos_progress.h
+new file mode 100644
+index 0000000..0ca7424
+--- /dev/null
++++ b/riscos/riscos_progress.h
+@@ -0,0 +1,17 @@
++/*
++ * riscos_progress.h, part of the RISC OS port of VCMI
++ *
++ * Called now and then from long-running loops (the AI's parallel_for,
++ * network packs, the loading loop): it keeps the sound queue topped up from
++ * whichever thread is running (riscos/riscos_sound.cpp). Weak, so code linked
++ * without the client (and the host tests) leaves it out.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#pragma once
++
++extern "C" void riscos_progress_hook(void) __attribute__((weak));
++#define VCMI_RISCOS_PROGRESS() do { if(riscos_progress_hook) riscos_progress_hook(); } while(0)
+diff --git a/riscos/riscos_sound.cpp b/riscos/riscos_sound.cpp
+new file mode 100644
+index 0000000..8d7c34f
+--- /dev/null
++++ b/riscos/riscos_sound.cpp
+@@ -0,0 +1,323 @@
++/*
++ * riscos_sound.cpp, part of the RISC OS port of VCMI
++ *
++ * See riscos_sound.h. SharedSoundBuffer 0.07+ and StreamManager 0.03+ (John
++ * Duffell's freeware, loaded by !Run when present) over SharedSound; the
++ * calls are the ones SDL's RISC OS driver in riscos-mesa makes.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#include "riscos_sound.h"
++
++#include <SDL_mixer.h>
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <mutex>
++#include <thread>
++#include <vector>
++
++#if defined(__riscos) && !defined(FAKE_SSB)
++#include <kernel.h>
++#endif
++
++extern "C" void riscos_progress_hook(void);
++
++namespace riscos
++{
++namespace
++{
++constexpr int RATE = 44100;
++constexpr int BLOCK_FRAMES = 1024;              // 23 ms
++constexpr int BLOCK_BYTES = BLOCK_FRAMES * 4;   // 16-bit stereo
++constexpr int TARGET_BLOCKS = 8;                // about 190 ms queued
++constexpr int MAX_BLOCKS_A_CALL = TARGET_BLOCKS + 2;
++constexpr int THREAD_SLEEP_MS = 10;
++
++using Clock = std::chrono::steady_clock;
++
++// --- SharedSoundBuffer / StreamManager --------------------------------------
++#if defined(__riscos) && !defined(FAKE_SSB)
++constexpr int XSharedSoundBuffer_OpenStream = 0x20000 | 0x55FC0;
++constexpr int XSharedSoundBuffer_CloseStream = 0x20000 | 0x55FC1;
++constexpr int XSharedSoundBuffer_Volume = 0x20000 | 0x55FC4;
++constexpr int XSharedSoundBuffer_SampleRate = 0x20000 | 0x55FC5;
++constexpr int XSharedSoundBuffer_Pause = 0x20000 | 0x55FC9;
++constexpr int XSharedSoundBuffer_ReturnStreamHandle = 0x20000 | 0x55FCE;
++constexpr int XStreamManager_AddBlock = 0x20000 | 0x57282;
++constexpr int XStreamManager_SetBuffer = 0x20000 | 0x57287;
++constexpr int XStreamManager_BufferStats = 0x20000 | 0x57288;
++constexpr int OS_SWINumberFromString = 0x39;
++
++int ssbHandle = 0, smStream = 0;
++
++bool swiExists(const char * name)
++{
++	_kernel_swi_regs r;
++	r.r[1] = reinterpret_cast<int>(name);
++	return _kernel_swi(OS_SWINumberFromString, &r, &r) == nullptr;
++}
++
++bool ssbOpen(std::string & why)
++{
++	if(!swiExists("SharedSoundBuffer_OpenStream") || !swiExists("StreamManager_AddBlock"))
++	{
++		why = "SharedSoundBuffer and StreamManager aren't loaded";
++		return false;
++	}
++	_kernel_swi_regs r;
++	r.r[0] = 2; // R2 is the usual block size
++	r.r[1] = reinterpret_cast<int>("VCMI");
++	r.r[2] = BLOCK_BYTES;
++	if(_kernel_oserror * e = _kernel_swi(XSharedSoundBuffer_OpenStream, &r, &r))
++	{
++		why = std::string("SharedSoundBuffer_OpenStream: ") + e->errmess;
++		return false;
++	}
++	ssbHandle = r.r[0];
++	r.r[0] = ssbHandle;
++	if(_kernel_oserror * e = _kernel_swi(XSharedSoundBuffer_ReturnStreamHandle, &r, &r))
++	{
++		why = std::string("SharedSoundBuffer_ReturnStreamHandle: ") + e->errmess;
++		r.r[0] = ssbHandle;
++		_kernel_swi(XSharedSoundBuffer_CloseStream, &r, &r);
++		ssbHandle = 0;
++		return false;
++	}
++	smStream = r.r[0];
++	r.r[0] = smStream; // room for well over the target: AddBlock never refuses
++	r.r[1] = BLOCK_BYTES * (MAX_BLOCKS_A_CALL + TARGET_BLOCKS) * 2;
++	_kernel_swi(XStreamManager_SetBuffer, &r, &r);
++	r.r[0] = ssbHandle;
++	r.r[1] = RATE * 1024; // Hz * 1024
++	_kernel_swi(XSharedSoundBuffer_SampleRate, &r, &r);
++	r.r[0] = ssbHandle;
++	r.r[1] = static_cast<int>(0xFFFFFFFFu); // full volume, both sides
++	_kernel_swi(XSharedSoundBuffer_Volume, &r, &r);
++	return true;
++}
++
++void ssbPause(bool pause)
++{
++	_kernel_swi_regs r;
++	r.r[0] = ssbHandle;
++	r.r[1] = pause ? 0 : 1;
++	_kernel_swi(XSharedSoundBuffer_Pause, &r, &r);
++}
++
++int ssbQueued() // bytes queued and not yet played, -1 on error
++{
++	_kernel_swi_regs r;
++	r.r[0] = smStream;
++	if(_kernel_swi(XStreamManager_BufferStats, &r, &r))
++		return -1;
++	return r.r[0] - r.r[1]; // added - played
++}
++
++bool ssbAdd(const void * data, int bytes) // StreamManager copies it
++{
++	_kernel_swi_regs r;
++	r.r[0] = smStream;
++	r.r[1] = reinterpret_cast<int>(data);
++	r.r[2] = bytes;
++	return _kernel_swi(XStreamManager_AddBlock, &r, &r) == nullptr;
++}
++
++void ssbClose()
++{
++	if(!ssbHandle)
++		return;
++	_kernel_swi_regs r;
++	r.r[0] = ssbHandle;
++	_kernel_swi(XSharedSoundBuffer_CloseStream, &r, &r);
++	ssbHandle = smStream = 0;
++}
++#else
++// Host test: a device that plays RATE frames a second once unpaused.
++std::atomic<long long> fakeAdded{0};
++long long fakePlayedBase = 0;
++Clock::time_point fakeSince;
++bool fakePaused = true;
++std::atomic<bool> fakeOpen{false};
++std::mutex fakeMutex;
++long long fakePlayed()
++{
++	if(fakePaused)
++		return fakePlayedBase;
++	auto ms = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - fakeSince).count();
++	long long p = fakePlayedBase + ms * RATE * 4 / 1000000;
++	return std::min(p, fakeAdded.load());
++}
++bool ssbOpen(std::string &) { fakeAdded = 0; fakePlayedBase = 0; fakePaused = true; fakeOpen = true; return true; }
++void ssbPause(bool pause)
++{
++	std::lock_guard l(fakeMutex);
++	fakePlayedBase = fakePlayed();
++	fakePaused = pause;
++	fakeSince = Clock::now();
++}
++int ssbQueued()
++{
++	std::lock_guard l(fakeMutex);
++	long long p = fakePlayed();
++	// a dry queue keeps the clock from running ahead of the data
++	if(!fakePaused && p >= fakeAdded.load())
++	{
++		fakePlayedBase = p;
++		fakeSince = Clock::now();
++	}
++	return static_cast<int>(fakeAdded.load() - p);
++}
++bool ssbAdd(const void *, int bytes) { std::lock_guard l(fakeMutex); fakeAdded += bytes; return true; }
++void ssbClose() { fakeOpen = false; }
++#endif
++
++// --- feeding ----------------------------------------------------------------
++std::atomic<bool> running{false};
++std::atomic<bool> started{false};
++std::atomic_flag busy = ATOMIC_FLAG_INIT;
++std::atomic<long long> lastPollMs{0};
++std::thread feeder;
++std::atomic<bool> stopFeeder{false};
++std::vector<unsigned char> block(BLOCK_BYTES);
++
++std::atomic<int> statBlocks{0}, statDry{0}, statFrame{0}, statThread{0}, statOther{0};
++std::atomic<int> statMinQueued{1 << 30};
++
++long long nowMs()
++{
++	return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
++}
++
++void pumpAs(SoundCaller caller)
++{
++	if(!running.load() || busy.test_and_set(std::memory_order_acquire))
++		return;
++	int queued = ssbQueued();
++	if(queued >= 0)
++	{
++		if(started.load())
++		{
++			if(queued == 0)
++				statDry++;
++			int q = queued * 1000 / (RATE * 4);
++			int m = statMinQueued.load();
++			while(q < m && !statMinQueued.compare_exchange_weak(m, q))
++				;
++		}
++		int added = 0;
++		while(queued < TARGET_BLOCKS * BLOCK_BYTES && added < MAX_BLOCKS_A_CALL)
++		{
++			// 0: another thread is in the mixer, or this one is (a decoder
++			// reading its file): leave it to the next call
++			if(Mix_MixAudioExternal(block.data(), BLOCK_BYTES) != 1)
++				break;
++			if(!ssbAdd(block.data(), BLOCK_BYTES))
++				break;
++			queued += BLOCK_BYTES;
++			added++;
++		}
++		if(added)
++		{
++			statBlocks += added;
++			(caller == SoundCaller::Frame ? statFrame : caller == SoundCaller::Thread ? statThread : statOther) += added;
++		}
++		if(!started.load() && queued >= 2 * BLOCK_BYTES)
++		{
++			ssbPause(false); // start once a little is queued, so it doesn't start dry
++			started = true;
++		}
++	}
++	busy.clear(std::memory_order_release);
++}
++}
++
++bool soundStart(std::string & why)
++{
++	if(running.load())
++		return true;
++	if(Mix_OpenAudioExternal(RATE, AUDIO_S16LSB, 2, BLOCK_FRAMES) != 0)
++	{
++		why = std::string("Mix_OpenAudioExternal: ") + Mix_GetError();
++		return false;
++	}
++	if(!ssbOpen(why))
++	{
++		Mix_CloseAudio();
++		return false;
++	}
++	ssbPause(true);
++	started = false;
++	running = true;
++	pumpAs(SoundCaller::Other);
++	stopFeeder = false;
++	feeder = std::thread([]
++	{
++		while(!stopFeeder.load())
++		{
++			pumpAs(SoundCaller::Thread);
++			std::this_thread::sleep_for(std::chrono::milliseconds(THREAD_SLEEP_MS));
++		}
++	});
++	return true;
++}
++
++void soundStop()
++{
++	if(!running.load())
++		return;
++	stopFeeder = true;
++	if(feeder.joinable())
++		feeder.join();
++	while(busy.test_and_set(std::memory_order_acquire)) // a pump in another thread
++		std::this_thread::yield();
++	running = false;
++	busy.clear(std::memory_order_release);
++	ssbClose();
++	Mix_CloseAudio();
++}
++
++void soundPump()
++{
++	pumpAs(SoundCaller::Other);
++}
++
++void soundPollFrom(SoundCaller caller)
++{
++	if(!running.load(std::memory_order_relaxed))
++		return;
++	long long now = nowMs();
++	long long last = lastPollMs.load(std::memory_order_relaxed);
++	if(now - last < 10 && caller != SoundCaller::Frame)
++		return;
++	lastPollMs.store(now, std::memory_order_relaxed);
++	pumpAs(caller);
++}
++
++void soundPoll()
++{
++	soundPollFrom(SoundCaller::Other);
++}
++
++extern "C" void riscos_progress_hook(void)
++{
++	soundPoll();
++}
++
++SoundStats soundStats()
++{
++	SoundStats s;
++	s.blocks = statBlocks.exchange(0);
++	s.dry = statDry.exchange(0);
++	s.byFrame = statFrame.exchange(0);
++	s.byThread = statThread.exchange(0);
++	s.byOther = statOther.exchange(0);
++	int m = statMinQueued.exchange(1 << 30);
++	s.minQueuedMs = m == (1 << 30) ? -1 : m;
++	return s;
++}
++}
+diff --git a/riscos/riscos_sound.h b/riscos/riscos_sound.h
+new file mode 100644
+index 0000000..e0fe71c
+--- /dev/null
++++ b/riscos/riscos_sound.h
+@@ -0,0 +1,56 @@
++/*
++ * riscos_sound.h, part of the RISC OS port of VCMI
++ *
++ * Sound output without SDL's audio thread. SDL_mixer is opened with
++ * Mix_OpenAudioExternal (patches/sdl2_mixer/0002) and its blocks go straight
++ * to SharedSoundBuffer. Any thread can top the queue up: the frame loop, the
++ * loading loop, the AI's loops (through the TBB stand-in) and a thread of its
++ * own all call soundPoll(). UnixLib switches threads round robin and only
++ * while the program has the computer, so one dedicated thread could miss its
++ * turn for long enough that the queue ran dry; now whichever thread is
++ * running keeps it filled.
++ *
++ * Built on RISC OS, or anywhere with -DFAKE_SSB for the host test (the
++ * SharedSoundBuffer and StreamManager calls are then simulated).
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++#pragma once
++
++#include <string>
++
++namespace riscos
++{
++/// Opens the mixer (44.1 kHz, 16-bit stereo) and a SharedSoundBuffer stream
++/// and starts the feeding thread. False (with the reason in `why`) if
++/// SharedSoundBuffer or StreamManager isn't loaded: the game plays silently.
++bool soundStart(std::string & why);
++
++/// Stops the thread, closes the stream and the mixer.
++void soundStop();
++
++/// Tops the queue up if it's been at least a centisecond since the last
++/// check. Cheap; safe from any thread, at any time (even inside the mixer:
++/// it then does nothing).
++void soundPoll();
++
++/// Tops the queue up now.
++void soundPump();
++
++/// For the log: blocks queued, times the queue ran dry, and which kinds of
++/// caller filled it (frame loop, thread, others) since the last call.
++struct SoundStats
++{
++	int blocks = 0, dry = 0;
++	int byFrame = 0, byThread = 0, byOther = 0;
++	int minQueuedMs = 0;
++};
++SoundStats soundStats();
++
++/// Who is calling soundPoll, for the statistics.
++enum class SoundCaller { Frame, Thread, Other };
++void soundPollFrom(SoundCaller caller);
++}
+diff --git a/riscos/tbb/tbbshim.h b/riscos/tbb/tbbshim.h
+index 6e0f1ee..119811d 100644
+--- a/riscos/tbb/tbbshim.h
++++ b/riscos/tbb/tbbshim.h
+@@ -52,13 +52,34 @@ public:
+ 	bool empty() const { return r_.empty() || c_.empty(); }
+ };
+ struct auto_partitioner {}; struct simple_partitioner {}; struct static_partitioner {};
+-template<typename Range, typename Body> void parallel_for(const Range & r, const Body & b) { if(!r.empty()) b(r); }
++// Between pieces of a parallel_for, the RISC OS port tops the sound up
++// (riscos_progress.h): the AI spends most of its turn in these loops.
++extern "C" void riscos_progress_hook(void) __attribute__((weak));
++inline void progress() { if(riscos_progress_hook) riscos_progress_hook(); }
++inline void progressEvery64() { static thread_local unsigned n = 0; if((++n & 63) == 0) progress(); }
++
++template<typename Range, typename Body> void parallel_for(const Range & r, const Body & b) { if(!r.empty()) b(r); progress(); }
++// A blocked_range goes in at most 16 pieces (at least the grain size each),
++// so per-pixel loops don't become a call per pixel.
++template<typename T, typename Body> void parallel_for(const blocked_range<T> & r, const Body & b)
++{
++	std::size_t g = r.grainsize() ? r.grainsize() : 1;
++	if((r.size() + 15) / 16 > g)
++		g = (r.size() + 15) / 16;
++	for(T i = r.begin(); i < r.end();)
++	{
++		T e = (static_cast<std::size_t>(r.end() - i) > g) ? static_cast<T>(i + g) : r.end();
++		b(blocked_range<T>(i, e, g));
++		progress();
++		i = e;
++	}
++}
+ template<typename Range, typename Body, typename P, typename = std::enable_if_t<!std::is_integral_v<Range>>>
+-void parallel_for(const Range & r, const Body & b, P &&) { if(!r.empty()) b(r); }
++void parallel_for(const Range & r, const Body & b, P &&) { parallel_for(r, b); }
+ template<typename Index, typename F, typename = std::enable_if_t<std::is_integral_v<Index>>>
+-void parallel_for(Index first, Index last, const F & f) { for(Index i = first; i < last; ++i) f(i); }
++void parallel_for(Index first, Index last, const F & f) { for(Index i = first; i < last; ++i) { f(i); progressEvery64(); } }
+ template<typename Index, typename F, typename = std::enable_if_t<std::is_integral_v<Index>>>
+-void parallel_for(Index first, Index last, Index step, const F & f) { for(Index i = first; i < last; i += step) f(i); }
++void parallel_for(Index first, Index last, Index step, const F & f) { for(Index i = first; i < last; i += step) { f(i); progressEvery64(); } }
+ template<typename Range, typename Value, typename Func, typename Reduction>
+ Value parallel_reduce(const Range & r, const Value & identity, const Func & f, const Reduction &) { return r.empty() ? identity : f(r, identity); }
+ 
+diff --git a/server/CGameHandler.cpp b/server/CGameHandler.cpp
+index ca0afc7..cf51504 100644
+--- a/server/CGameHandler.cpp
++++ b/server/CGameHandler.cpp
+@@ -8,6 +8,9 @@
+  *
+  */
+ #include "StdInc.h"
++#ifdef VCMI_RISCOS
++#include "../riscos/riscos_progress.h"
++#endif
+ #include "CGameHandler.h"
+ 
+ #include "CVCMIServer.h"
+@@ -494,6 +497,9 @@ void CGameHandler::handleClientDisconnection(GameConnectionID connectionID, cons
+ 
+ void CGameHandler::handleReceivedPack(GameConnectionID connection, CPackForServer & pack)
+ {
++#ifdef VCMI_RISCOS
++	VCMI_RISCOS_PROGRESS(); // tops the sound up (riscos/riscos_sound.cpp)
++#endif
+ 	//prepare struct informing that action was applied
+ 	auto sendPackageResponse = [&](bool successfullyApplied)
+ 	{
+-- 
+2.43.0
+

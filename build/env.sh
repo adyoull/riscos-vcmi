@@ -3,7 +3,7 @@
 # Each can be overridden from the environment.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-: "${VERSION:=1.7.5-riscos4test}"
+: "${VERSION:=1.7.5-riscos5test}"
 : "${VCMI_REF:=1.7.5}"
 : "${VCMI_GIT:=https://github.com/vcmi/vcmi.git}"
 # fuzzylite is a submodule of VCMI (AI/FuzzyLite), at the commit VCMI pins.

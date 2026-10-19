@@ -1,0 +1,184 @@
+SDL2_mixer 2.6.3: mixing without an SDL audio device (RISC OS)
+
+Mix_OpenAudioExternal() sets the mixer up without opening an SDL audio
+device, and Mix_MixAudioExternal() mixes the next block on request, from
+any thread; Mix_LockAudio() then uses a mutex of the mixer's own. On RISC
+OS the program feeds SharedSoundBuffer itself, from whichever of its
+threads gets time, instead of depending on one SDL audio thread that
+UnixLib's scheduler may not run for a while.
+
+--- a/include/SDL_mixer.h
++++ b/include/SDL_mixer.h
+@@ -458,6 +458,23 @@
+ extern DECLSPEC int SDLCALL Mix_OpenAudioDevice(int frequency, Uint16 format, int channels, int chunksize, const char* device, int allowed_changes);
+ 
+ /**
++ * Open the mixer without an SDL audio device (RISC OS port).
++ *
++ * The program sends the sound out itself: it calls Mix_MixAudioExternal()
++ * for each block, from any of its threads, and Mix_LockAudio() uses a mutex
++ * of the mixer's own. Close it with Mix_CloseAudio() as usual.
++ */
++extern DECLSPEC int SDLCALL Mix_OpenAudioExternal(int frequency, Uint16 format, int channels, int chunksize);
++
++/**
++ * Mix the next len bytes of sound into stream (opened with
++ * Mix_OpenAudioExternal). Returns 1 if mixed, 0 if another thread is mixing
++ * or using the mixer just now, or this thread is inside the mixer (try again
++ * later), -1 if not opened that way.
++ */
++extern DECLSPEC int SDLCALL Mix_MixAudioExternal(Uint8 *stream, int len);
++
++/**
+  * Find out what the actual audio device parameters are.
+  *
+  * If Mix_OpenAudioDevice() was called with `allowed_changes` set to anything
+--- a/src/mixer.c
++++ b/src/mixer.c
+@@ -63,6 +63,12 @@
+ static SDL_AudioSpec mixer;
+ static SDL_AudioDeviceID audio_device;
+ 
++/* Mixing without an SDL audio device (Mix_OpenAudioExternal): the program
++   asks for each block itself (Mix_MixAudioExternal), from whichever of its
++   threads has time. external_lock then stands in for the device's lock. */
++static SDL_mutex *external_lock = NULL;
++static int external_depth = 0;  /* times locked (only read with the lock held) */
++
+ typedef struct _Mix_effectinfo
+ {
+     Mix_EffectFunc_t callback;
+@@ -449,11 +455,12 @@
+ }
+ #endif
+ 
++static int init_mixer_state(void);
++
+ /* Open the mixer with a certain desired audio format */
+ int Mix_OpenAudioDevice(int frequency, Uint16 format, int nchannels, int chunksize,
+                         const char* device, int allowed_changes)
+ {
+-    int i;
+     SDL_AudioSpec desired;
+ 
+     /* This used to call SDL_OpenAudio(), which initializes the audio
+@@ -492,6 +499,13 @@
+     PrintFormat("Audio device", &mixer);
+ #endif
+ 
++    return init_mixer_state();
++}
++
++static int init_mixer_state(void)
++{
++    int i;
++
+     num_channels = MIX_CHANNELS;
+     mix_channel = (struct _Mix_Channel *) SDL_malloc(num_channels * sizeof(struct _Mix_Channel));
+ 
+@@ -521,10 +535,60 @@
+     open_music(&mixer);
+ 
+     audio_opened = 1;
+-    SDL_PauseAudioDevice(audio_device, 0);
++    if (audio_device) {
++        SDL_PauseAudioDevice(audio_device, 0);
++    }
+     return(0);
+ }
+ 
++int Mix_OpenAudioExternal(int frequency, Uint16 format, int nchannels, int chunksize)
++{
++    if (audio_opened) {
++        if (format == mixer.format && nchannels == mixer.channels) {
++            ++audio_opened;
++            return(0);
++        }
++        while (audio_opened) {
++            Mix_CloseAudio();
++        }
++    }
++    external_lock = SDL_CreateMutex();
++    if (!external_lock) {
++        return(-1);
++    }
++    SDL_zero(mixer);
++    mixer.freq = frequency;
++    mixer.format = format;
++    mixer.channels = (Uint8)nchannels;
++    mixer.samples = (Uint16)chunksize;
++    mixer.silence = (format == AUDIO_U8) ? 0x80 : 0x00;
++    mixer.size = (Uint32)chunksize * (Uint32)nchannels * (SDL_AUDIO_BITSIZE(format) / 8);
++    mixer.callback = mix_channels;
++    audio_device = 0;
++    return init_mixer_state();
++}
++
++int Mix_MixAudioExternal(Uint8 *stream, int len)
++{
++    if (!audio_opened || !external_lock) {
++        return(-1);
++    }
++    if (SDL_TryLockMutex(external_lock) != 0) {
++        return(0);              /* another thread is in the mixer */
++    }
++    /* The lock is recursive: if it was already held, this thread is inside
++       the mixer (a decoder reading its file, a callback), part way through. */
++    if (external_depth > 0) {
++        SDL_UnlockMutex(external_lock);
++        return(0);
++    }
++    external_depth = 1;
++    mix_channels(NULL, stream, len);
++    external_depth = 0;
++    SDL_UnlockMutex(external_lock);
++    return(1);
++}
++
+ /* Open the mixer with a certain desired audio format */
+ int Mix_OpenAudio(int frequency, Uint16 format, int nchannels, int chunksize)
+ {
+@@ -1348,7 +1412,9 @@
+             Mix_SetMusicCMD(NULL);
+             Mix_HaltChannel(-1);
+             _Mix_DeinitEffects();
+-            SDL_CloseAudioDevice(audio_device);
++            if (audio_device) {
++                SDL_CloseAudioDevice(audio_device);
++            }
+             audio_device = 0;
+             SDL_free(mix_channel);
+             mix_channel = NULL;
+@@ -1357,6 +1423,10 @@
+             SDL_free((void *)chunk_decoders);
+             chunk_decoders = NULL;
+             num_decoders = 0;
++            if (external_lock) {
++                SDL_DestroyMutex(external_lock);
++                external_lock = NULL;
++            }
+         }
+         --audio_opened;
+     }
+@@ -1705,11 +1775,21 @@
+ 
+ void Mix_LockAudio(void)
+ {
++    if (external_lock) {
++        SDL_LockMutex(external_lock);
++        external_depth++;
++        return;
++    }
+     SDL_LockAudioDevice(audio_device);
+ }
+ 
+ void Mix_UnlockAudio(void)
+ {
++    if (external_lock) {
++        external_depth--;
++        SDL_UnlockMutex(external_lock);
++        return;
++    }
+     SDL_UnlockAudioDevice(audio_device);
+ }
+ 

@@ -1,7 +1,7 @@
 From 7c2bc1db66f0e880ff4485d97a2b78f7e1a79a15 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 15:07:40 +0100
-Subject: [PATCH 15/15] RISC OS: presenter converts each row once, with NEON
+Subject: [PATCH 15/16] RISC OS: presenter converts each row once, with NEON
 
 When the map scrolls (a hero moving) nearly the whole screen changes
 every frame. The presenter converted every screen pixel from the logical
