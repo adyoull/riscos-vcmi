@@ -1,0 +1,65 @@
+From 0d07059a970c3586115516515952608c70453201 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 12:30:53 +0100
+Subject: [PATCH 12/12] RISC OS: play silently when there is no sound
+
+SDL_Init asked for sound and game controllers together with the video, and
+the client exited if any failed: on RISC OS without SharedSoundBuffer (not
+part of RISC OS) it quit without a word. Sound and game controllers are now
+optional. The mixer uses 4096-sample chunks (1024 underran in other ports).
+---
+ client/media/CAudioBase.cpp        |  9 ++++++++-
+ client/renderSDL/ScreenHandler.cpp | 15 +++++++++++++++
+ 2 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/client/media/CAudioBase.cpp b/client/media/CAudioBase.cpp
+index e4f08e8..fef7309 100644
+--- a/client/media/CAudioBase.cpp
++++ b/client/media/CAudioBase.cpp
+@@ -19,7 +19,14 @@ CAudioBase::CAudioBase()
+ {
+ 	if(initializationCounter == 0)
+ 	{
+-		if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 1024) == -1)
++#ifdef VCMI_RISCOS
++		// RISC OS: SDL's sound runs on a thread the PThreadTicker switches to;
++		// 1024 samples underran in other ports (fheroes2, Freeciv use 4096).
++		const int chunkSize = 4096;
++#else
++		const int chunkSize = 1024;
++#endif
++		if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, chunkSize) == -1)
+ 			logGlobal->error("Mix_OpenAudio error: %s", Mix_GetError());
+ 		else
+ 			initializeSuccess = true;
+diff --git a/client/renderSDL/ScreenHandler.cpp b/client/renderSDL/ScreenHandler.cpp
+index 152521b..b13fd06 100644
+--- a/client/renderSDL/ScreenHandler.cpp
++++ b/client/renderSDL/ScreenHandler.cpp
+@@ -234,11 +234,26 @@ ScreenHandler::ScreenHandler()
+ 		SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "AVAudioSessionCategoryAmbient");
+ #endif
+ 
++#ifdef VCMI_RISCOS
++	// RISC OS: sound needs SharedSoundBuffer and StreamManager (not part of
++	// RISC OS) and game controllers may not be there: without them the game
++	// runs silent instead of stopping.
++	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
++	{
++		logGlobal->error("Something was wrong: %s", SDL_GetError());
++		exit(-1);
++	}
++	if(SDL_InitSubSystem(SDL_INIT_AUDIO))
++		logGlobal->warn("No sound: %s", SDL_GetError());
++	if(SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER))
++		logGlobal->warn("No game controllers: %s", SDL_GetError());
++#else
+ 	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER))
+ 	{
+ 		logGlobal->error("Something was wrong: %s", SDL_GetError());
+ 		exit(-1);
+ 	}
++#endif
+ 
+ 	const auto & logCallback = [](void * userdata, int category, SDL_LogPriority priority, const char * message)
+ 	{

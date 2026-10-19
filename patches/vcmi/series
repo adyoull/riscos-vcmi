@@ -9,3 +9,4 @@
 0009-RISC-OS-no-libdl-the-AIs-are-linked-in.patch
 0010-RISC-OS-keep-the-desktop-running-while-the-game-load.patch
 0011-RISC-OS-CStopWatch-in-milliseconds.patch
+0012-RISC-OS-play-silently-when-there-is-no-sound.patch

@@ -1,5 +1,18 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos2test (2026-10-19, not released)
+- The computer players are Nullkiller2 / BattleAI again: the static AI table
+  picks them by library name (libNullkiller2), and the RISC OS directories
+  gave no "lib", so every computer player was EmptyAI (ends its turn at once).
+- No sound modules (SharedSoundBuffer, StreamManager) no longer stops the
+  game: sound and game controllers are optional, the game plays silently.
+- Mixer chunks of 4096 samples (1024 underran in other ports).
+- Tested in RISC OS for Linux (riscos-linux-testbed 0.9, desktop, its patched
+  UnixLib, GOG Heroes III Complete data): main menu, scenario list, a game of
+  "Arrogance" for a week (8 days) against three Nullkiller2 players (0.5-6 s
+  a turn, mostly 1-2 s), autosaves, 50 fps with about 1% of the screen
+  redrawn a frame.
+
 ## 1.7.5-riscos1test (not released)
 First test build: VCMI 1.7.5 for RISC OS 5, not yet run on RISC OS.
 - One static program: the game, its server (in a thread) and the computer

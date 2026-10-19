@@ -1,15 +1,15 @@
-From 3cab41d796669d935b25b33d28ee311581c010b6 Mon Sep 17 00:00:00 2001
+From da4981ca3b9c0f036ed97c9629ae57141ee3857e Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:38:56 +0100
-Subject: [PATCH 03/11] RISC OS: directories and thread names
+Subject: [PATCH 03/12] RISC OS: directories and thread names
 
 VCMIDirsRISCOS: the program, config and Mods in <VCMI$Dir>, the Heroes III
 files in <VCMI$Data>, settings, saves and logs in <Choices$Write>.VCMI.
 UnixLib has no prctl and no thread names: setThreadName only logs.
 ---
  lib/CThreadHelper.cpp |  4 +++-
- lib/VCMIDirs.cpp      | 45 +++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 48 insertions(+), 1 deletion(-)
+ lib/VCMIDirs.cpp      | 47 +++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 50 insertions(+), 1 deletion(-)
 
 diff --git a/lib/CThreadHelper.cpp b/lib/CThreadHelper.cpp
 index 04dd4d8..d2e2f2f 100644
@@ -34,10 +34,10 @@ index 04dd4d8..d2e2f2f 100644
  	prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
  #else
 diff --git a/lib/VCMIDirs.cpp b/lib/VCMIDirs.cpp
-index d80e3b9..d4ef85b 100644
+index d80e3b9..8bee130 100644
 --- a/lib/VCMIDirs.cpp
 +++ b/lib/VCMIDirs.cpp
-@@ -439,6 +439,49 @@ void VCMIDirsAndroid::init()
+@@ -439,6 +439,51 @@ void VCMIDirsAndroid::init()
  	IVCMIDirsUNIX::init();
  }
  
@@ -82,12 +82,14 @@ index d80e3b9..d4ef85b 100644
 +
 +bfs::path VCMIDirsRISCOS::libraryPath() const { return "/<VCMI$Dir>"; }
 +bfs::path VCMIDirsRISCOS::binaryPath() const { return "/<VCMI$Dir>"; }
-+std::string VCMIDirsRISCOS::libraryName(const std::string& basename) const { return basename; }
++// No libraries are loaded (the AIs are linked in), but the static AI table
++// (CDynLibHandler) picks the AI by this name's stem: libNullkiller2 etc.
++std::string VCMIDirsRISCOS::libraryName(const std::string& basename) const { return "lib" + basename + ".so"; }
 +
  #elif defined(VCMI_PORTMASTER)
  class VCMIDirsPM : public IVCMIDirsUNIX
  {
-@@ -643,6 +686,8 @@ namespace VCMIDirs
+@@ -643,6 +688,8 @@ namespace VCMIDirs
  			static VCMIDirsWIN32 singleton;
  		#elif defined(VCMI_ANDROID)
  			static VCMIDirsAndroid singleton;

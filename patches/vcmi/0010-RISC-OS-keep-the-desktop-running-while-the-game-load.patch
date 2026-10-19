@@ -1,7 +1,7 @@
-From 9374a8a2edfe9632f7272b4f062ef4867f2fdd15 Mon Sep 17 00:00:00 2001
+From c0c310b82fcb8d6059e96d9bd39e4962cfa6a49f Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:21:31 +0100
-Subject: [PATCH 10/11] RISC OS: keep the desktop running while the game loads
+Subject: [PATCH 10/12] RISC OS: keep the desktop running while the game loads
 
 The main thread waited for the loading thread in join(), without polling
 the Wimp, so the whole desktop stopped until loading finished. It now
