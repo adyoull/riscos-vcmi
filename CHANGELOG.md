@@ -1,5 +1,14 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos4test (not released)
+- The sound stopped for up to 1.4 s when a hero moved onto another terrain
+  (the riscos3test log: sound gaps of 0.2-1.4 s, matching the longest
+  frames). VCMI resumes each terrain's music where it left off, and dr_mp3,
+  without a seek table, seeks by decoding the MP3 from the start to that
+  point while holding the audio lock. SDL2_mixer now gives dr_mp3 a seek
+  table when the music is loaded (patches/sdl2_mixer/0001): on Linux, seeking
+  100 s into GRASS.MP3 went from 75 ms to 0.2 ms, the table taking 2 ms.
+
 ## 1.7.5-riscos3test (not released)
 - Sound stuttered while a hero moved (Pi, full screen). SDL's sound thread
   only runs when UnixLib's ticker switches to it; the frame limiter now

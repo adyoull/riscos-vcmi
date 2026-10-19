@@ -13,6 +13,8 @@ to play; see `app/!VCMI/H3data/ReadMe,fff`.
 
 - `patches/vcmi/`: `git am` on VCMI's tag 1.7.5 (`series` gives the order).
 - `patches/boost/`: one patch for Boost 1.83 (UnixLib has statfs, not statvfs).
+- `patches/sdl2_mixer/`: a seek table for MP3 music (resuming a track no longer
+  stops the sound).
 - `build/`: `build-deps.sh`, `build-vcmi.sh`, `package.sh`, versions and
   checksums (`env.sh`, `SHA256SUMS.txt`). See BUILDING.md.
 - `tests/`: host tests of the TBB stand-in and of the presenter.

@@ -5,7 +5,7 @@
 #   minizip (zlib 1.3.1 contrib; libz itself is the devkit's),
 #   SDL2_image 2.6.3 (stb_image: PNG/JPG, no other formats),
 #   SDL2_ttf 2.20.2 (bundled FreeType, no HarfBuzz),
-#   SDL2_mixer 2.6.3 (WAV + MP3 via dr_mp3: HoMM3's sound and music).
+#   SDL2_mixer 2.6.3 (WAV + MP3 via dr_mp3: HoMM3's sound and music; patches/sdl2_mixer).
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 mkdir -p "$DL" "$WORK/src" "$STAGE/lib" "$STAGE/include/SDL2"
@@ -115,6 +115,7 @@ fi
 if [ ! -f "$STAGE/lib/libSDL2_mixer.a" ]; then
   fetch "$MIXER_TARBALL" "$MIXER_URL"
   unpack "$MIXER_TARBALL" SDL2_mixer-2.6.3
+  for p in "$ROOT"/patches/sdl2_mixer/*.patch; do patch -s -d "$WORK/src/SDL2_mixer-2.6.3" -p1 < "$p"; done
   ( cd "$WORK/src/SDL2_mixer-2.6.3"
     ./configure --host=arm-riscos-gnueabihf --prefix="$STAGE" --disable-shared --enable-static \
       SDL2_CONFIG=/bin/false SDL_CFLAGS="$SDL_CF" SDL_LIBS="$SDL_LB" \

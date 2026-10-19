@@ -1,0 +1,80 @@
+SDL2_mixer 2.6.3: give dr_mp3 a seek table when MP3 music is loaded
+
+Without one, drmp3_seek_to_pcm_frame decodes from the start of the file up
+to the new position, inside the audio lock. VCMI resumes terrain music where
+it stopped (Mix_FadeInMusicPos), so on a Pi the sound stopped for up to
+1.4 s whenever a hero moved onto another terrain. The table only needs the
+frame headers and is made in Mix_LoadMUS_RW, outside the audio lock.
+
+--- a/src/codecs/music_drmp3.c
++++ b/src/codecs/music_drmp3.c
+@@ -56,10 +56,34 @@
+     drmp3_int16 *buffer;
+     int buffer_size;
+     int channels;
++    drmp3_seek_point *seek_points;
+ 
+     Mix_MusicMetaTags tags;
+ } DRMP3_Music;
+ 
++/* dr_mp3 seeks without a seek table by decoding everything from the start
++   up to the new position, holding the audio lock: on slow machines resuming
++   a track two minutes in silenced all sound for over a second. The table is
++   made here, when the music is loaded (outside the audio lock): it only reads
++   the frame headers. */
++#define DRMP3_SEEK_POINTS 512
++static void DRMP3_MakeSeekTable(DRMP3_Music *music)
++{
++    drmp3_uint32 count = DRMP3_SEEK_POINTS;
++
++    music->seek_points = (drmp3_seek_point *)SDL_malloc(count * sizeof(drmp3_seek_point));
++    if (!music->seek_points) {
++        return;
++    }
++    if (!drmp3_calculate_seek_points(&music->dec, &count, music->seek_points) ||
++        !drmp3_bind_seek_table(&music->dec, count, music->seek_points)) {
++        drmp3_bind_seek_table(&music->dec, 0, NULL);
++        SDL_free(music->seek_points);
++        music->seek_points = NULL;
++        drmp3_seek_to_pcm_frame(&music->dec, 0);
++    }
++}
++
+ 
+ static size_t DRMP3_ReadCB(void *context, void *buf, size_t size)
+ {
+@@ -110,6 +134,8 @@
+         return NULL;
+     }
+ 
++    DRMP3_MakeSeekTable(music);
++
+     music->channels = music->dec.channels;
+     music->stream = SDL_NewAudioStream(AUDIO_S16SYS,
+                                        (Uint8)music->channels,
+@@ -120,6 +146,7 @@
+     if (!music->stream) {
+         SDL_OutOfMemory();
+         drmp3_uninit(&music->dec);
++        SDL_free(music->seek_points);
+         SDL_free(music);
+         return NULL;
+     }
+@@ -129,6 +156,7 @@
+     if (!music->buffer) {
+         drmp3_uninit(&music->dec);
+         SDL_OutOfMemory();
++        SDL_free(music->seek_points);
+         SDL_free(music);
+         return NULL;
+     }
+@@ -244,6 +272,9 @@
+ 
+     drmp3_uninit(&music->dec);
+     meta_tags_clear(&music->tags);
++    if (music->seek_points) {
++        SDL_free(music->seek_points);
++    }
+ 
+     if (music->stream) {
+         SDL_FreeAudioStream(music->stream);
