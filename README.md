@@ -9,7 +9,7 @@ This repository holds the RISC OS changes as patches on VCMI 1.7.5
 `!VCMI` application around the program. You need the original game's files
 to play; see `app/!VCMI/H3data/ReadMe,fff`.
 
-**Status:** test builds; runs in RISC OS for Linux (testbed), Pi tests pending.
+**Status:** first release, 1.7.5-riscos1 (Raspberry Pi 4, RISC OS 5).
 
 - `patches/vcmi/`: `git am` on VCMI's tag 1.7.5 (`series` gives the order).
 - `patches/boost/`: one patch for Boost 1.83 (UnixLib has statfs, not statvfs).

@@ -12,17 +12,16 @@ interface improvements, and can load mods.
 
 Version: see docs.Version.
 
-This is a TEST BUILD
---------------------
-It has not been tried on RISC OS hardware yet. Please report what
-happens (see Problems below).
-
 You need the original game
 --------------------------
 VCMI uses the pictures, sounds, music and maps of the original Heroes
 III: Shadow of Death or Complete (GOG, CD). They aren't included. Copy
 the Data, Maps and Mp3 directories into !VCMI.H3data: H3data.ReadMe
 says how. Or keep them elsewhere and *Set VCMI$Data to their directory.
+
+With the GOG.com installer (Heroes of Might and Magic 3: Complete),
+!GOGImport does it on RISC OS: drag the installer onto it and click
+Import. It is on the same release page as !VCMI (gogimport-1.0.zip).
 
 What you need
 -------------
@@ -46,6 +45,13 @@ covers the screen, so other programs keep running).
 
 Settings, saved games and the log are kept in <Choices$Write>.VCMI.
 
+It draws 30 frames a second (video.targetfps in
+<Choices$Write>.VCMI.Config.settings/json changes it). To make it
+lighter on the processor: a lower Resolution, or a higher Scaling, in
+the game's System Options; faster hero and enemy speeds in the
+Adventure Options; "terrainAnimation" and "objectAnimation" false in the
+"adventure" part of settings/json.
+
 Not in this port (yet)
 ----------------------
 - The films (intro, and the ones in towns and campaigns).
@@ -57,8 +63,8 @@ Not in this port (yet)
 Problems
 --------
 Report them at https://github.com/adyoull/riscos-vcmi/issues with the
-logs: <Choices$Write>.VCMI.Cache.VCMI_Client_log/txt, and vcmilog (see
-!Run).
+logs: <Choices$Write>.VCMI.Cache.VCMI_Client_log/txt, and vcmilog (turn
+it on in !Run: it goes to <Wimp$ScrapDir>.vcmilog).
 
 Licence
 -------
@@ -67,4 +73,6 @@ or later (docs.COPYING). Its source and the RISC OS changes are at the
 addresses above. Heroes of Might and Magic III is (c) Ubisoft; its files
 are not part of this program.
 
-PThreadTicker is (c) its authors; see docs.PThreadTicker-Licence.
+FuzzyLite, used by VCMI's computer players, is under the GPL version 3,
+so vcmi,ff8 as a whole can be passed on under the GPL version 3. The
+licences of the libraries in it are in docs.Licences.

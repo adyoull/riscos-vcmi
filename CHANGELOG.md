@@ -1,5 +1,13 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos1 (2026-10-19)
+- The first release: the same program as 1.7.5-riscos6test ("no stuttering
+  at all now" on a Pi 4), with the vcmilog off by default (`!Run` turns it
+  on). `!Help` no longer calls it a test build, describes the settings that
+  make it lighter, and points to !GOGImport; `docs.Licences` has the
+  licences of every library in vcmi,ff8.
+- Released with GOG Import 1.0 (gogimport-1.0.zip).
+
 ## 1.7.5-riscos6test (not released)
 - riscos5test on the Pi: "next to no stutter". Its log still showed the
   queue running out now and then while the computer players moved or the
