@@ -1,7 +1,7 @@
 From cf931e3440354d74fd8443ac2a44daee50b1bf1b Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 14:22:13 +0100
-Subject: [PATCH 13/16] RISC OS: 30 fps, the sound thread gets a turn every
+Subject: [PATCH 13/17] RISC OS: 30 fps, the sound thread gets a turn every
  frame, figures in the log
 
 UnixLib's threads run only while VCMI has the computer and are otherwise

@@ -1,7 +1,7 @@
 From 6fc06b1227a991860ed609ff0d19c32dd630280f Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 16:21:03 +0100
-Subject: [PATCH 16/16] RISC OS: sound fed from any running thread, log at
+Subject: [PATCH 16/17] RISC OS: sound fed from any running thread, log at
  info, finer frame waits
 
 SDL's audio thread is not used. CAudioBase opens SDL_mixer with

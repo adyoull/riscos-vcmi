@@ -1,0 +1,131 @@
+From aedc3130e945701829516a7f30443bdec652860e Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 17:14:36 +0100
+Subject: [PATCH 17/17] RISC OS: the sound queue grows when it runs dry
+
+It keeps about 190 ms queued, 2 blocks (46 ms) more each time it runs dry,
+up to about 370 ms, and a block less after each 20 s without running dry.
+Running dry is counted once each time. The Frames: log line says how much
+is being kept queued.
+---
+ riscos/riscos_platform.cpp |  4 ++--
+ riscos/riscos_sound.cpp    | 39 +++++++++++++++++++++++++++++++++-----
+ riscos/riscos_sound.h      |  1 +
+ 3 files changed, 37 insertions(+), 7 deletions(-)
+
+diff --git a/riscos/riscos_platform.cpp b/riscos/riscos_platform.cpp
+index 36d0f76..5b905e7 100644
+--- a/riscos/riscos_platform.cpp
++++ b/riscos/riscos_platform.cpp
+@@ -152,9 +152,9 @@ void frameDrawn(int busyMs)
+ 	SoundStats ss = soundStats();
+ 	std::fprintf(stderr, "Frames: %d in %.1f s (%.1f fps), drawing %lld ms (longest %d), waiting %lld ms; "
+ 		"sound: %d blocks mixed (by the frame loop %d, its thread %d, others %d), least queued %d ms, "
+-		"ran dry %d times, longest gap %d ms\n",
++		"ran dry %d times, longest gap %d ms, keeping %d ms queued\n",
+ 		stats.frames, elapsed / 1000.0, stats.frames * 1000.0 / elapsed, stats.busy, stats.busyMax,
+-		stats.waited, m, ss.byFrame, ss.byThread, ss.byOther, ss.minQueuedMs, ss.dry, gap);
++		stats.waited, m, ss.byFrame, ss.byThread, ss.byOther, ss.minQueuedMs, ss.dry, gap, ss.targetMs);
+ 	(void)gaps;
+ 	stats.frames = 0;
+ 	stats.busy = 0;
+diff --git a/riscos/riscos_sound.cpp b/riscos/riscos_sound.cpp
+index 8d7c34f..6dcf967 100644
+--- a/riscos/riscos_sound.cpp
++++ b/riscos/riscos_sound.cpp
+@@ -34,8 +34,16 @@ namespace
+ constexpr int RATE = 44100;
+ constexpr int BLOCK_FRAMES = 1024;              // 23 ms
+ constexpr int BLOCK_BYTES = BLOCK_FRAMES * 4;   // 16-bit stereo
+-constexpr int TARGET_BLOCKS = 8;                // about 190 ms queued
+-constexpr int MAX_BLOCKS_A_CALL = TARGET_BLOCKS + 2;
++// How much is kept queued adapts: about 190 ms while the queue never runs
++// dry, 2 blocks (46 ms) more each time it does, up to about 370 ms (SDL's
++// old queue), and a block less after each 20 s without running dry.
++// Running dry means no thread of the program ran for that long: the
++// desktop had the computer (Wimp_Poll) or a long SWI (a file) held it.
++constexpr int TARGET_MIN_BLOCKS = 8;
++constexpr int TARGET_MAX_BLOCKS = 16;
++constexpr int TARGET_STEP_UP = 2;
++constexpr int CALM_MS_TO_STEP_DOWN = 20000;
++constexpr int MAX_BLOCKS_A_CALL = TARGET_MAX_BLOCKS + 2;
+ constexpr int THREAD_SLEEP_MS = 10;
+ 
+ using Clock = std::chrono::steady_clock;
+@@ -90,7 +98,7 @@ bool ssbOpen(std::string & why)
+ 	}
+ 	smStream = r.r[0];
+ 	r.r[0] = smStream; // room for well over the target: AddBlock never refuses
+-	r.r[1] = BLOCK_BYTES * (MAX_BLOCKS_A_CALL + TARGET_BLOCKS) * 2;
++	r.r[1] = BLOCK_BYTES * (MAX_BLOCKS_A_CALL + TARGET_MAX_BLOCKS) * 2;
+ 	_kernel_swi(XStreamManager_SetBuffer, &r, &r);
+ 	r.r[0] = ssbHandle;
+ 	r.r[1] = RATE * 1024; // Hz * 1024
+@@ -187,6 +195,9 @@ std::vector<unsigned char> block(BLOCK_BYTES);
+ 
+ std::atomic<int> statBlocks{0}, statDry{0}, statFrame{0}, statThread{0}, statOther{0};
+ std::atomic<int> statMinQueued{1 << 30};
++std::atomic<int> targetBlocks{TARGET_MIN_BLOCKS};
++long long lastDryMs = 0; // these two only with busy held
++bool wasDry = false;
+ 
+ long long nowMs()
+ {
+@@ -202,15 +213,32 @@ void pumpAs(SoundCaller caller)
+ 	{
+ 		if(started.load())
+ 		{
++			long long now = nowMs();
+ 			if(queued == 0)
+-				statDry++;
++			{
++				if(!wasDry) // once for each time it runs dry
++				{
++					statDry++;
++					targetBlocks = std::min(targetBlocks.load() + TARGET_STEP_UP, TARGET_MAX_BLOCKS);
++				}
++				wasDry = true;
++				lastDryMs = now;
++			}
++			else
++				wasDry = false;
++			if(queued > 0 && now - lastDryMs >= CALM_MS_TO_STEP_DOWN && targetBlocks.load() > TARGET_MIN_BLOCKS)
++			{
++				targetBlocks = targetBlocks.load() - 1;
++				lastDryMs = now;
++			}
+ 			int q = queued * 1000 / (RATE * 4);
+ 			int m = statMinQueued.load();
+ 			while(q < m && !statMinQueued.compare_exchange_weak(m, q))
+ 				;
+ 		}
+ 		int added = 0;
+-		while(queued < TARGET_BLOCKS * BLOCK_BYTES && added < MAX_BLOCKS_A_CALL)
++		const int target = targetBlocks.load() * BLOCK_BYTES;
++		while(queued < target && added < MAX_BLOCKS_A_CALL)
+ 		{
+ 			// 0: another thread is in the mixer, or this one is (a decoder
+ 			// reading its file): leave it to the next call
+@@ -318,6 +346,7 @@ SoundStats soundStats()
+ 	s.byOther = statOther.exchange(0);
+ 	int m = statMinQueued.exchange(1 << 30);
+ 	s.minQueuedMs = m == (1 << 30) ? -1 : m;
++	s.targetMs = targetBlocks.load() * BLOCK_FRAMES * 1000 / RATE;
+ 	return s;
+ }
+ }
+diff --git a/riscos/riscos_sound.h b/riscos/riscos_sound.h
+index e0fe71c..4101a2a 100644
+--- a/riscos/riscos_sound.h
++++ b/riscos/riscos_sound.h
+@@ -47,6 +47,7 @@ struct SoundStats
+ 	int blocks = 0, dry = 0;
+ 	int byFrame = 0, byThread = 0, byOther = 0;
+ 	int minQueuedMs = 0;
++	int targetMs = 0;  // how much it keeps queued now
+ };
+ SoundStats soundStats();
+ 
+-- 
+2.43.0
+

@@ -14,3 +14,4 @@
 0014-Faster-fog-of-war-checks-when-drawing-the-adventure-.patch
 0015-RISC-OS-presenter-converts-each-row-once-with-NEON.patch
 0016-RISC-OS-sound-fed-from-any-running-thread-log-at-inf.patch
+0017-RISC-OS-the-sound-queue-grows-when-it-runs-dry.patch

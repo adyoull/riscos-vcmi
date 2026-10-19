@@ -17,6 +17,14 @@ static int failures = 0;
 #define CHECK(c, ...) do { if(!(c)) { std::printf("FAIL: " __VA_ARGS__); std::printf("\n"); failures++; } } while(0)
 
 static std::atomic<int> postmixCalls{0};
+extern "C" void Mix_LockAudio(void);
+extern "C" void Mix_UnlockAudio(void);
+static void extern_lock_for(int ms)
+{
+	Mix_LockAudio();
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+	Mix_UnlockAudio();
+}
 
 int main()
 {
@@ -66,6 +74,17 @@ int main()
 	CHECK(s.blocks >= 80 && s.blocks <= 95, "about 2 s of blocks (86), got %d", s.blocks);
 	CHECK(s.dry == 0, "ran dry %d times", s.dry);
 	CHECK(s.byFrame + s.byOther > 0, "the polling threads fed some");
+
+	// 3. a stall (nothing can mix for 400 ms): it runs dry once, then keeps
+	// more queued
+	s = riscos::soundStats();
+	CHECK(s.targetMs >= 180 && s.targetMs <= 190, "starts at about 190 ms, got %d", s.targetMs);
+	extern_lock_for(400);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	s = riscos::soundStats();
+	std::printf("after a 400 ms stall: %d dry, keeping %d ms queued\n", s.dry, s.targetMs);
+	CHECK(s.dry == 1, "ran dry once, got %d", s.dry);
+	CHECK(s.targetMs >= 230 && s.targetMs <= 235, "keeps 2 blocks more queued, got %d", s.targetMs);
 
 	riscos::soundStop();
 	Mix_FreeChunk(chunk);

@@ -1,5 +1,16 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos6test (not released)
+- riscos5test on the Pi: "next to no stutter". Its log still showed the
+  queue running out now and then while the computer players moved or the
+  map scrolled (gaps of 220-360 ms, when no thread of the program ran: the
+  desktop or a long file operation had the computer).
+- The amount kept queued now adapts: about 190 ms while it never runs dry,
+  46 ms more each time it does, up to about 370 ms, and 23 ms less after each
+  20 s without running dry. The log's "Frames:" line says how much it is
+  keeping queued, and counts each time it runs dry once (riscos5test counted
+  every check that found it empty).
+
 ## 1.7.5-riscos5test (not released)
 - Sound without SDL's audio thread. SDL2_mixer mixes on request
   (patches/sdl2_mixer/0002: Mix_OpenAudioExternal, Mix_MixAudioExternal) and
