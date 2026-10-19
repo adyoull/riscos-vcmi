@@ -1,7 +1,7 @@
 From c0c310b82fcb8d6059e96d9bd39e4962cfa6a49f Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:21:31 +0100
-Subject: [PATCH 10/12] RISC OS: keep the desktop running while the game loads
+Subject: [PATCH 10/15] RISC OS: keep the desktop running while the game loads
 
 The main thread waited for the loading thread in join(), without polling
 the Wimp, so the whole desktop stopped until loading finished. It now
@@ -57,3 +57,6 @@ index 263cf72..842a219 100644
  			loading.join();
  	#ifdef VCMI_ANDROID
  			vmHelper.callStaticVoidMethod(CAndroidVMHelper::NATIVE_METHODS_DEFAULT_CLASS, "hideProgress");
+-- 
+2.43.0
+

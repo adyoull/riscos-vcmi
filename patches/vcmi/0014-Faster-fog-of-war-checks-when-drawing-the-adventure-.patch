@@ -1,0 +1,98 @@
+From f4e06dbec1beca036dbd813fb945a0ff1c59d879 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 15:07:40 +0100
+Subject: [PATCH 14/15] Faster fog-of-war checks when drawing the adventure map
+
+The map view checks every tile on screen and its 8 neighbours for
+visibility every frame. Each check found the player's team again (two
+map lookups and a set lookup); profiling a hero walking showed that
+costing more than drawing the changed tiles. The renderer context now
+keeps the team and the map size while the interface and callback stay
+the same and reads the fog of war directly: about half the cost of a
+tile's checksum, a sixth of the time spent drawing a frame.
+---
+ client/mapView/MapRendererContext.cpp | 28 ++++++++++++++++++++++++---
+ client/mapView/MapRendererContext.h   | 13 +++++++++++++
+ 2 files changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/client/mapView/MapRendererContext.cpp b/client/mapView/MapRendererContext.cpp
+index 921d171..3cb89a2 100644
+--- a/client/mapView/MapRendererContext.cpp
++++ b/client/mapView/MapRendererContext.cpp
+@@ -22,6 +22,7 @@
+ #include "../../lib/battle/CPlayerBattleCallback.h"
+ #include "../../lib/battle/IBattleState.h"
+ #include "../../lib/callback/CCallback.h"
++#include "../../lib/CPlayerState.h"
+ #include "../../lib/mapObjects/CGHeroInstance.h"
+ #include "../../lib/mapObjects/MiscObjects.h"
+ #include "../../lib/mapping/CMap.h"
+@@ -68,10 +69,31 @@ bool MapRendererBaseContext::isInMap(const int3 & coordinates) const
+ 
+ bool MapRendererBaseContext::isVisible(const int3 & coordinates) const
+ {
++	const auto * iface = GAME->interface();
++	const auto * cb = iface->cb.get();
+ 	if(settingsSessionSpectate)
+-		return GAME->interface()->cb->isInTheMap(coordinates);
+-	else
+-		return GAME->interface()->cb->isVisible(coordinates);
++		return cb->isInTheMap(coordinates);
++
++	if(visibilityInterface != iface || visibilityCallback != cb)
++	{
++		visibilityInterface = iface;
++		visibilityCallback = cb;
++		visibilityTeam = nullptr;
++		std::optional<PlayerColor> player = cb->getPlayerID();
++		// neutral, spectator or no player: the rare cases, asked as before
++		if(player.has_value() && *player != PlayerColor::NEUTRAL && !player->isSpectator())
++			visibilityTeam = cb->getPlayerTeam(*player);
++		visibilityMapSize = cb->getMapSize();
++	}
++	if(!visibilityTeam)
++		return cb->isVisible(coordinates);
++
++	// as CGameState::isVisibleFor
++	if(static_cast<uint32_t>(coordinates.x) >= static_cast<uint32_t>(visibilityMapSize.x) ||
++	   static_cast<uint32_t>(coordinates.y) >= static_cast<uint32_t>(visibilityMapSize.y) ||
++	   static_cast<uint32_t>(coordinates.z) >= static_cast<uint32_t>(visibilityMapSize.z))
++		return false;
++	return visibilityTeam->fogOfWarMap[coordinates];
+ }
+ 
+ bool MapRendererBaseContext::isActiveHero(const CGObjectInstance * obj) const
+diff --git a/client/mapView/MapRendererContext.h b/client/mapView/MapRendererContext.h
+index 21c3443..63c2740 100644
+--- a/client/mapView/MapRendererContext.h
++++ b/client/mapView/MapRendererContext.h
+@@ -15,6 +15,10 @@
+ #include "../lib/int3.h"
+ #include "../lib/spells/ViewSpellInt.h"
+ 
++VCMI_LIB_NAMESPACE_BEGIN
++struct TeamState;
++VCMI_LIB_NAMESPACE_END
++
+ struct MapRendererContextState;
+ 
+ class MapRendererBaseContext : public IMapRendererContext
+@@ -23,6 +27,15 @@ public:
+ 	const MapRendererContextState & viewState;
+ 	bool settingsSessionSpectate = false;
+ 
++	// isVisible is asked for every tile on screen and its 8 neighbours every
++	// frame. Finding the player's team (two map lookups and a set lookup) cost
++	// more than drawing the map, so the team found is kept while the
++	// interface and callback (whose player and map don't change) are the same.
++	mutable const void * visibilityInterface = nullptr;
++	mutable const void * visibilityCallback = nullptr;
++	mutable const TeamState * visibilityTeam = nullptr; // nullptr: ask the callback
++	mutable int3 visibilityMapSize;
++
+ 	explicit MapRendererBaseContext(const MapRendererContextState & viewState);
+ 
+ 	uint32_t getObjectRotation(ObjectInstanceID objectID) const;
+-- 
+2.43.0
+

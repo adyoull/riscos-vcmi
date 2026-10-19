@@ -1,5 +1,21 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos3test (not released)
+- Sound stuttered while a hero moved (Pi, full screen). SDL's sound thread
+  only runs when UnixLib's ticker switches to it; the frame limiter now
+  gives the other threads a turn every frame.
+- 30 frames a second by default (50 before; `video.targetfps` in
+  settings.json changes it).
+- The log (test builds, VCMI$Log) has a line every 10 s: frames, time spent
+  drawing and waiting, sound blocks mixed and the longest gap between them.
+- Hot paths (profiled on Linux with a hero walking across the map):
+  - the fog-of-war check made for every tile on screen and its neighbours
+    every frame looked the player's team up each time; it is now kept, and
+    a frame's map drawing takes about a sixth less work (patch 0014);
+  - the presenter converts each logical row once (NEON where the processor
+    has it) and then only stretches it, instead of converting every screen
+    pixel through the scale table (patch 0015).
+
 ## GOG Import 1.0 (2026-10-19)
 - !GOGImport: gets Data, Maps and Mp3 out of the GOG.com installer of
   Heroes III Complete on RISC OS. Drag the installer's .exe or -1.bin onto

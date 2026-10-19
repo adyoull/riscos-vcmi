@@ -1,7 +1,7 @@
 From ae63780eb3600b44ac1fa37a5163d40b154883a3 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:42:06 +0100
-Subject: [PATCH 11/12] RISC OS: CStopWatch in milliseconds
+Subject: [PATCH 11/15] RISC OS: CStopWatch in milliseconds
 
 UnixLib's clock() counts centiseconds (CLOCKS_PER_SEC is 100), so
 TO_MS_DIVISOR, CLOCKS_PER_SEC / 1000, was 0: every getDiff() divided by
@@ -35,3 +35,6 @@ index 9b744a6..dd8f3e7 100644
  	#else
  		return std::clock();
  	#endif
+-- 
+2.43.0
+

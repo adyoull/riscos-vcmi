@@ -1,7 +1,7 @@
 From 8d66ac0b3e4ac0aefade0933fc422950ea4025d1 Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:07:49 +0100
-Subject: [PATCH 08/12] RISC OS: the server always runs in a thread
+Subject: [PATCH 08/15] RISC OS: the server always runs in a thread
 
 There are no processes to run vcmiserver in (and Boost.Process needs
 sigtimedwait, which UnixLib lacks).
@@ -38,3 +38,6 @@ index d0edf9a..50b4232 100644
  #define ENABLE_SERVER_PROCESS
  #endif
  
+-- 
+2.43.0
+

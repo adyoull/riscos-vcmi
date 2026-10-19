@@ -1,7 +1,7 @@
 From da4981ca3b9c0f036ed97c9629ae57141ee3857e Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:38:56 +0100
-Subject: [PATCH 03/12] RISC OS: directories and thread names
+Subject: [PATCH 03/15] RISC OS: directories and thread names
 
 VCMIDirsRISCOS: the program, config and Mods in <VCMI$Dir>, the Heroes III
 files in <VCMI$Data>, settings, saves and logs in <Choices$Write>.VCMI.
@@ -98,3 +98,6 @@ index d80e3b9..8bee130 100644
  		#elif defined(VCMI_PORTMASTER)
  			static VCMIDirsPM singleton;
  		#elif defined(VCMI_XDG)
+-- 
+2.43.0
+

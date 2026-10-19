@@ -1,0 +1,236 @@
+From cf931e3440354d74fd8443ac2a44daee50b1bf1b Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 14:22:13 +0100
+Subject: [PATCH 13/15] RISC OS: 30 fps, the sound thread gets a turn every
+ frame, figures in the log
+
+UnixLib's threads run only while VCMI has the computer and are otherwise
+switched every 2 cs, so with the game busy (a hero moving) SDL's sound
+thread could miss its turns long enough for the queued sound to run out.
+The frame limiter now gives the other threads a turn every frame. With
+VCMI$Log set, the log gets frame and sound figures every 10 s: frames,
+time drawing and waiting, blocks mixed and the longest gap between them.
+The frame rate is 30 by default (50 before): the same moves, less drawing.
+---
+ client/gui/FramerateManager.cpp |  7 +++
+ client/media/CAudioBase.cpp     |  9 ++++
+ config/schemas/settings.json    |  2 +-
+ riscos/riscos_platform.cpp      | 93 +++++++++++++++++++++++++++++++++
+ riscos/riscos_platform.h        | 14 +++++
+ 5 files changed, 124 insertions(+), 1 deletion(-)
+
+diff --git a/client/gui/FramerateManager.cpp b/client/gui/FramerateManager.cpp
+index e7c85ee..9a58c02 100644
+--- a/client/gui/FramerateManager.cpp
++++ b/client/gui/FramerateManager.cpp
+@@ -14,6 +14,9 @@
+ #include "../../lib/CConfigHandler.h"
+ #include <SDL_video.h>
+ #include <SDL_timer.h>
++#ifdef VCMI_RISCOS
++#include "../../riscos/riscos_platform.h"
++#endif
+ 
+ FramerateManager::FramerateManager(int targetFrameRate)
+ 	: targetFrameTime(Duration(std::chrono::seconds(1)) / targetFrameRate)
+@@ -33,6 +36,9 @@ void FramerateManager::framerateDelay()
+ 	// RISC OS: SDL_Delay waits in Wimp_PollIdle, so the desktop gets the time.
+ 	// It can return up to a centisecond early: wait again while 5 ms or more
+ 	// remain (as the Julius port does).
++	riscos::frameDrawn(static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(timeSpentBusy).count()));
++	timeSpentBusy = Clock::now() - lastTimePoint;
++	const Duration busy = timeSpentBusy;
+ 	while(!vsyncEnabled && timeSpentBusy < targetFrameTime)
+ 	{
+ 		auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(targetFrameTime - timeSpentBusy);
+@@ -41,6 +47,7 @@ void FramerateManager::framerateDelay()
+ 		SDL_Delay(static_cast<Uint32>(remaining.count()));
+ 		timeSpentBusy = Clock::now() - lastTimePoint;
+ 	}
++	riscos::frameWaited(static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(timeSpentBusy - busy).count()));
+ #else
+ 	if(!vsyncEnabled && timeSpentBusy < targetFrameTime)
+ 	{
+diff --git a/client/media/CAudioBase.cpp b/client/media/CAudioBase.cpp
+index fef7309..6e03628 100644
+--- a/client/media/CAudioBase.cpp
++++ b/client/media/CAudioBase.cpp
+@@ -11,6 +11,9 @@
+ #include "CAudioBase.h"
+ 
+ #include <SDL_mixer.h>
++#ifdef VCMI_RISCOS
++#include "../../riscos/riscos_platform.h"
++#endif
+ 
+ int CAudioBase::initializationCounter = 0;
+ bool CAudioBase::initializeSuccess = false;
+@@ -29,7 +32,13 @@ CAudioBase::CAudioBase()
+ 		if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, chunkSize) == -1)
+ 			logGlobal->error("Mix_OpenAudio error: %s", Mix_GetError());
+ 		else
++		{
+ 			initializeSuccess = true;
++#ifdef VCMI_RISCOS
++			// For the log: when SDL's sound thread mixes (see riscos_platform)
++			Mix_SetPostMix([](void *, Uint8 *, int) { riscos::soundMixed(); }, nullptr);
++#endif
++		}
+ 	}
+ 	++initializationCounter;
+ }
+diff --git a/config/schemas/settings.json b/config/schemas/settings.json
+index a5d345a..c47561a 100644
+--- a/config/schemas/settings.json
++++ b/config/schemas/settings.json
+@@ -292,7 +292,7 @@
+ 				},
+ 				"targetfps" : {
+ 					"type" : "number",
+-					"default" : 50
++					"default" : 30
+ 				},
+ 				"vsync" : {
+ 					"type" : "boolean",
+diff --git a/riscos/riscos_platform.cpp b/riscos/riscos_platform.cpp
+index 07c3089..db527ff 100644
+--- a/riscos/riscos_platform.cpp
++++ b/riscos/riscos_platform.cpp
+@@ -11,9 +11,12 @@
+ #include "riscos_platform.h"
+ 
+ #include <kernel.h>
++#include <atomic>
++#include <chrono>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <sched.h>
+ #include <unistd.h>
+ 
+ // UnixLib: the C heap goes in dynamic areas ("VCMI Heap", then "VCMI Heap 2"...)
+@@ -59,6 +62,96 @@ void reportError(const std::string & message)
+ 	r.r[2] = reinterpret_cast<int>("VCMI");
+ 	_kernel_swi(0x400df /* Wimp_ReportError */, &r, &r);
+ }
++
++namespace
++{
++using Clock = std::chrono::steady_clock;
++
++int msSince(Clock::time_point t)
++{
++	return static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count());
++}
++
++// Sound thread: when it last mixed, the longest gap and gaps over 200 ms
++// (4096-sample blocks come every 93 ms; SDL keeps about 280 ms queued).
++std::atomic<long long> lastMix{0};
++std::atomic<int> mixes{0};
++std::atomic<int> longestGap{0};
++std::atomic<int> longGaps{0};
++
++long long nowMs()
++{
++	return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
++}
++
++struct FrameStats
++{
++	bool logging = false;
++	bool checked = false;
++	Clock::time_point start;
++	int frames = 0;
++	long long busy = 0;
++	int busyMax = 0;
++	long long waited = 0;
++};
++FrameStats stats;
++}
++
++void soundMixed()
++{
++	long long now = nowMs();
++	long long last = lastMix.exchange(now);
++	mixes.fetch_add(1, std::memory_order_relaxed);
++	if(last == 0)
++		return;
++	int gap = static_cast<int>(now - last);
++	int longest = longestGap.load(std::memory_order_relaxed);
++	while(gap > longest && !longestGap.compare_exchange_weak(longest, gap))
++		;
++	if(gap > 200)
++		longGaps.fetch_add(1, std::memory_order_relaxed);
++}
++
++void frameWaited(int waitedMs)
++{
++	stats.waited += waitedMs;
++}
++
++void frameDrawn(int busyMs)
++{
++	// One round of the other threads: a thread with nothing to do hands the
++	// turn straight on, so this costs little.
++	sched_yield();
++
++	if(!stats.checked)
++	{
++		const char * log = std::getenv("VCMI$Log");
++		stats.logging = log && *log;
++		stats.checked = true;
++		stats.start = Clock::now();
++	}
++	if(!stats.logging)
++		return;
++	stats.frames++;
++	stats.busy += busyMs;
++	if(busyMs > stats.busyMax)
++		stats.busyMax = busyMs;
++	int elapsed = msSince(stats.start);
++	if(elapsed < 10000)
++		return;
++	int m = mixes.exchange(0);
++	int gap = longestGap.exchange(0);
++	int gaps = longGaps.exchange(0);
++	std::fprintf(stderr, "Frames: %d in %.1f s (%.1f fps), drawing %lld ms (longest %d), waiting %lld ms; "
++		"sound: %d blocks mixed, longest gap %d ms, %d gaps over 200 ms\n",
++		stats.frames, elapsed / 1000.0, stats.frames * 1000.0 / elapsed, stats.busy, stats.busyMax,
++		stats.waited, m, gap, gaps);
++	stats.frames = 0;
++	stats.busy = 0;
++	stats.busyMax = 0;
++	stats.waited = 0;
++	stats.start = Clock::now();
++}
+ }
+ 
+ #endif
+diff --git a/riscos/riscos_platform.h b/riscos/riscos_platform.h
+index 1c61448..ac2bd26 100644
+--- a/riscos/riscos_platform.h
++++ b/riscos/riscos_platform.h
+@@ -20,6 +20,20 @@ void initOutput();
+ 
+ /// A desktop error box (Wimp_ReportError), titled VCMI.
+ void reportError(const std::string & message);
++
++/// Called once a frame, after drawing and before the frame limiter waits.
++/// Gives the other threads (SDL's sound thread above all) a turn: UnixLib's
++/// threads only run while the program has the computer, and are otherwise
++/// switched only every 2 cs. With VCMI$Log set, it also writes the frame
++/// and sound figures to the log every 10 s.
++void frameDrawn(int busyMs);
++
++/// Called by the frame limiter with the time it waited (in Wimp_PollIdle).
++void frameWaited(int waitedMs);
++
++/// Called by SDL_mixer each time it has mixed a block of sound (the sound
++/// thread). Only counts, for the log.
++void soundMixed();
+ }
+ 
+ #endif
+-- 
+2.43.0
+

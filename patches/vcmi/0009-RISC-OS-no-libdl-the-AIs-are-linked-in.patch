@@ -1,7 +1,7 @@
 From 2a24dc0aa7f8dd35d87059faf0cae6d671dc4c9b Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 22:10:19 +0100
-Subject: [PATCH 09/12] RISC OS: no libdl (the AIs are linked in)
+Subject: [PATCH 09/15] RISC OS: no libdl (the AIs are linked in)
 
 ---
  CMakeLists.txt | 2 +-
@@ -20,3 +20,6 @@ index 46950e8..2da27bd 100644
  		set(SYSTEM_LIBS ${SYSTEM_LIBS} ${CMAKE_DL_LIBS})
  	endif()
  endif()
+-- 
+2.43.0
+
