@@ -1,0 +1,10 @@
+| !Run for !GOGImport: gets Heroes III's files (Data, Maps, Mp3) out of the
+| game's GOG installer for VCMI. Drag the installer onto the icon.
+Set GOGImport$Dir <Obey$Dir>
+IconSprites <GOGImport$Dir>.!Sprites
+| A file dropped on the application in a Filer window comes as %0.
+Unset GOGImport$File
+If "%*0"<>"" Then Set GOGImport$File %*0
+RMEnsure UtilityModule 5.00 Error !GOGImport needs RISC OS 5
+WimpSlot -min 512K -max 512K
+BASIC -quit <GOGImport$Dir>.!RunImage

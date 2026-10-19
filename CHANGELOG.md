@@ -1,5 +1,19 @@
 # Changes in the RISC OS port of VCMI
 
+## GOG Import 1.0 (2026-10-19)
+- !GOGImport: gets Data, Maps and Mp3 out of the GOG.com installer of
+  Heroes III Complete on RISC OS. Drag the installer's .exe or -1.bin onto
+  its icon or window, drag !VCMI or a directory in to choose where the files
+  go (default !VCMI.H3data), click Import. innoextract runs in a TaskWindow,
+  so the desktop keeps running; progress, the result and any problem show in
+  the window, not in an error box.
+- innoextract 1.9 for RISC OS (static; bzip2 1.0.8, liblzma 5.8.1, Boost
+  1.83; its heap in a dynamic area).
+- Tested in RISC OS for Linux (testbed 0.9): the GOG Complete installer
+  (77075) unpacked to 225 files, identical to innoextract on Linux; dragging
+  the window and opening the icon bar menu during the import; a bad
+  installer reports "Not a supported Inno Setup installer!".
+
 ## 1.7.5-riscos2test (2026-10-19, not released)
 - The computer players are Nullkiller2 / BattleAI again: the static AI table
   picks them by library name (libNullkiller2), and the RISC OS directories

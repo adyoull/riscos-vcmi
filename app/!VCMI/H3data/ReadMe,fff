@@ -17,10 +17,15 @@ Data, Maps and Mp3, e.g. in your !Boot:
 
   Set VCMI$Data ADFS::HardDisc4.$.Games.Heroes3
 
-Getting them from the GOG installer: run it on Windows (or with Wine)
-and copy the three directories from where it installed the game, or
-unpack it with innoextract on Linux or macOS:
+Getting them from the GOG installer, on RISC OS: !GOGImport (from the
+same place as !VCMI, gogimport-*.zip) unpacks them here. Put the
+installer's two parts (setup_heroes_..._(nnnnn).exe and its -1.bin) in
+one directory, open the directory !VCMI is in so the Filer sees it,
+run !GOGImport, drag the installer onto its icon and click Import.
 
-  innoextract setup_heroes_of_might_and_magic_3_complete_4.0_(28740).exe
+Elsewhere: run the installer on Windows (or with Wine) and copy the three
+directories from where it installed the game, or on Linux or macOS:
 
-then copy app/Data, app/Maps and app/Mp3.
+  innoextract -I Data -I Maps -I Mp3 setup_heroes_..._(nnnnn).exe
+
+and copy the Data, Maps and Mp3 it makes.

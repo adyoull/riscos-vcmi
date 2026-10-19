@@ -7,6 +7,8 @@ On x86-64 Linux (or the riscos-crossdev container image), with git, cmake
 build/build-deps.sh     # Boost, minizip, SDL2_image, SDL2_ttf, SDL2_mixer -> work/stage
 build/build-vcmi.sh     # VCMI 1.7.5 + patches/vcmi -> work/build-vcmi/bin/vcmiclient
 build/package.sh        # !VCMI -> dist/vcmi-$VERSION.zip
+tools/innoextract/build.sh   # innoextract 1.9 (bzip2, liblzma, Boost) -> work/inno/build/innoextract
+tools/gogimport/package.sh   # !GOGImport -> dist/gogimport-1.0.zip
 ```
 
 `build-deps.sh` clones riscos-crossdev at `CROSSDEV_REF` and installs its

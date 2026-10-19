@@ -1,0 +1,47 @@
+GOG Import
+==========
+
+Gets the files VCMI needs (Data, Maps and Mp3) out of the GOG.com
+installer of Heroes of Might and Magic III Complete, on RISC OS, so
+you don't need Windows, Linux or a Mac to set up VCMI.
+
+You need the game's GOG installer, both parts, in the same directory:
+
+  setup_heroes_of_might_and_magic_3_complete_4.0_(...)_gog_..._(nnnnn).exe
+  setup_heroes_of_might_and_magic_3_complete_4.0_(...)_gog_..._(nnnnn)-1.bin
+
+(GOG.com, "Heroes of Might and Magic 3: Complete", offline backup game
+installer.) About 1 GB of free disc space is needed for the files.
+
+How to use it
+-------------
+1. Double-click !GOGImport. Its icon appears on the icon bar.
+2. Drag the installer (the .exe, or the -1.bin) onto that icon, or into
+   the window it opens.
+3. The files go into !VCMI.H3data if the Filer has seen !VCMI (open the
+   directory !VCMI is in first). To choose another place, drag !VCMI or
+   a directory into the window.
+4. Click Import. It takes a few minutes; the window shows each file as
+   it's unpacked. When it's finished, double-click !VCMI to play.
+
+You can also drag the installer straight onto !GOGImport in a Filer
+window.
+
+How it works
+------------
+It runs innoextract 1.9 (Daniel Scharrer's Inno Setup unpacker,
+https://constexpr.org/innoextract/) in a TaskWindow, so the desktop keeps
+running. innoextract can be used on its own from the command line too:
+*<GOGImport$Dir>.innoextract --help
+
+This is part of the RISC OS port of VCMI:
+https://github.com/adyoull/riscos-vcmi
+
+Licences
+--------
+!GOGImport: GNU GPL version 2 or later (as VCMI).
+innoextract: zlib licence. liblzma (xz): BSD Zero Clause / public
+domain. bzip2: BSD-style. Boost: Boost Software Licence 1.0. UnixLib and
+GCC's runtime libraries: see docs. The texts are in docs.
+Heroes of Might and Magic is a trademark of Ubisoft. GOG and GOG.com are
+trademarks of CD PROJEKT. This tool is not made or endorsed by either.

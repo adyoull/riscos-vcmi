@@ -1,0 +1,3 @@
+| !Boot for !GOGImport: seen by the Filer.
+Set GOGImport$Dir <Obey$Dir>
+IconSprites <Obey$Dir>.!Sprites

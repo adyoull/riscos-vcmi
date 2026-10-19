@@ -1,0 +1,14 @@
+--- a/src/cli/main.cpp
++++ b/src/cli/main.cpp
+@@ -499,3 +499,11 @@
+ 	
+ 	return logger::total_errors == 0 ? ExitSuccess : ExitDataError;
+ }
++
++#ifdef __riscos
++// RISC OS (UnixLib): the C heap goes in dynamic areas of at most 128 MB each
++// ("innoextract heap", "innoextract heap 2"...), not in the WimpSlot, so a
++// TaskWindow's small slot is enough even for LZMA2's large dictionaries.
++const char * const __dynamic_da_name = "innoextract heap";
++int __dynamic_da_max_size = 128 * 1024 * 1024;
++#endif

@@ -9,7 +9,7 @@ This repository holds the RISC OS changes as patches on VCMI 1.7.5
 `!VCMI` application around the program. You need the original game's files
 to play; see `app/!VCMI/H3data/ReadMe,fff`.
 
-**Status:** first test builds, not yet run on RISC OS.
+**Status:** test builds; runs in RISC OS for Linux (testbed), Pi tests pending.
 
 - `patches/vcmi/`: `git am` on VCMI's tag 1.7.5 (`series` gives the order).
 - `patches/boost/`: one patch for Boost 1.83 (UnixLib has statfs, not statvfs).
@@ -17,6 +17,11 @@ to play; see `app/!VCMI/H3data/ReadMe,fff`.
   checksums (`env.sh`, `SHA256SUMS.txt`). See BUILDING.md.
 - `tests/`: host tests of the TBB stand-in and of the presenter.
 - `app/!VCMI`: `!Run`, `!Boot`, `!Help`, the data folder's ReadMe.
+- `tools/gogimport/!GOGImport`: a desktop tool that unpacks the game's
+  files from the GOG.com installer on RISC OS (drag the installer onto it).
+  It runs innoextract 1.9, built by `tools/innoextract/build.sh`;
+  `tools/gogimport/package.sh` makes `dist/gogimport-1.0.zip`. No game
+  files are in it.
 
 VCMI is GPL-2.0-or-later; so are the RISC OS changes (COPYING).
 Heroes of Might and Magic III is (c) Ubisoft and is not part of this.
