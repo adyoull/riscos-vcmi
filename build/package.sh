@@ -73,7 +73,7 @@ FreeType (in SDL2_ttf): the FreeType Licence (FreeType). Portions of this
   software are copyright (c) The FreeType Project (www.freetype.org).
   All rights reserved.
 minizip (zlib 1.3.1 contrib) and zlib: zlib licence (zlib-minizip).
-SDL2 (riscos-mesa 20.3.5-16), Mesa (OSMesa, EGL, GLU), zlib, UnixLib and
+SDL2 (riscos-mesa 20.3.5-17e), Mesa (OSMesa, EGL, GLU), zlib, UnixLib and
   GCC's runtime libraries: SDL2-Mesa-UnixLib (the riscos-mesa devkit's
   LICENCES.txt).
 PThreadTicker: docs.PThreadTicker-Licence.

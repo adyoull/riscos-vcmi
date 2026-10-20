@@ -50,12 +50,20 @@ Full screen (borderless) with a Resolution smaller than the screen
 centred, with black borders: sharp, and less work than filling the
 screen. Choosing the screen's own size fills it again.
 
+On a Raspberry Pi, "Scale with the overlay" (System Options, General)
+fills the screen with that smaller picture instead: the Pi's video
+overlay scales it, which costs the processor nothing, but the picture is
+smoothed rather than sharp (and stretched if its shape isn't the
+screen's). It needs VideoOverlay in !System and takes effect when VCMI
+is next started. New in this test build: tell us how it looks and how
+fast it is.
+
 It draws 30 frames a second (video.targetfps in
 <Choices$Write>.VCMI.Config.settings/json changes it). To make it
 lighter on the processor: a lower Resolution, or a higher Scaling, in
 the game's System Options; faster hero and enemy speeds in the
-Adventure Options; "terrainAnimation" and "objectAnimation" false in the
-"adventure" part of settings/json.
+Adventure Options; and switching off Map animations, Terrain animations
+and Town animations (Adventure Map options).
 
 Not in this port (yet)
 ----------------------

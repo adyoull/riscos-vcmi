@@ -1,5 +1,23 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos8test (not released)
+- Animation switches in System Options, Adventure Map (David Feugey's
+  suggestion): Map animations (flags, windmills, creatures on the map),
+  Terrain animations (water, lava) and Town animations (the buildings in
+  the town screen, and the creature pictures in the creature, fort and
+  blacksmith windows). The first two were settings already
+  (`adventure.objectAnimation`, `adventure.terrainAnimation`); the third is
+  new (`adventure.townAnimation`). Off, the first frame stays.
+- Scale with the overlay (System Options, General; `video.overlay`, off by
+  default): in full screen with a Resolution smaller than the screen, the
+  picture is handed to riscos-mesa at that size (SDL_RISCOS_FB_RENDER_SIZE,
+  SDL_RISCOS_FB_OVERLAY) and the Pi's VideoOverlay scales it to the screen,
+  instead of showing it centred. Set when the window is made, so it takes
+  effect at the next start. If riscos-mesa can't do it, the game is centred
+  as before. `!Run` loads VideoOverlay from !System if it's there.
+- Built with the riscos-mesa devkit 20.3.5-17e (a test build), which has
+  that overlay path for SDL's software windows.
+
 ## 1.7.5-riscos7test (not released)
 - A centred playground with black borders (David Feugey's suggestion on the
   ROOL forum): in full screen (borderless), the Resolution in System

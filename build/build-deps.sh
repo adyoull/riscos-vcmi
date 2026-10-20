@@ -14,7 +14,10 @@ if [ ! -d "$CROSSDEV" ]; then
   git -c advice.detachedHead=false clone -q --branch "$CROSSDEV_REF" --depth 1 "$CROSSDEV_GIT" "$CROSSDEV"
 fi
 [ -x "$RISCOS_TOOLCHAIN/bin/arm-riscos-gnueabihf-gcc" ] || "$CROSSDEV/toolchain/install-prebuilt.sh"
-[ -f "$RISCOS_DEVKIT/VERSION" ] || "$CROSSDEV/devkit/install.sh"
+if [ ! -f "$RISCOS_DEVKIT/VERSION" ]; then
+  echo "$DEVKIT_SHA256  $DL/$DEVKIT_TARBALL" | sha256sum -c --quiet
+  mkdir -p "$RISCOS_DEVKIT" && tar xzf "$DL/$DEVKIT_TARBALL" -C "$RISCOS_DEVKIT" --strip-components=1
+fi
 . "$CROSSDEV/env.sh"
 CFLAGS_RO="$RISCOS_CFLAGS -mtune=cortex-a72"
 TC="$CROSSDEV/cmake/riscos.cmake"

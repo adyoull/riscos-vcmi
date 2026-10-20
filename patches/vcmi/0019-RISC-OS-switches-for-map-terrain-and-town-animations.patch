@@ -1,0 +1,226 @@
+From 594f1dba280230cb91db527f89d4ac19a97dddbb Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Tue, 20 Oct 2026 21:19:52 +0100
+Subject: [PATCH 19/20] RISC OS: switches for map, terrain and town animations
+
+Adventure Map options gain three switches: map object animations,
+terrain animations (both existing settings) and a new town animation
+setting, adventure.townAnimation, which keeps town buildings and the
+creature pictures (creature windows, fort, blacksmith) on their first
+frame. Less to draw on slower computers. The right-hand column is
+spaced 25 pixels apart so all ten rows fit.
+---
+ .../Content/config/translations/english.json  |  6 +++
+ client/widgets/Images.cpp                     |  8 ++++
+ client/widgets/Images.h                       |  3 ++
+ client/windows/CCastleInterface.cpp           |  5 ++-
+ .../windows/settings/AdventureOptionsTab.cpp  | 19 ++++++++++
+ config/schemas/settings.json                  |  7 +++-
+ .../widgets/settings/adventureOptionsTab.json | 38 ++++++++++++++++++-
+ 7 files changed, 82 insertions(+), 4 deletions(-)
+
+diff --git a/Mods/vcmi/Content/config/translations/english.json b/Mods/vcmi/Content/config/translations/english.json
+index f7a2010..b97dd4e 100644
+--- a/Mods/vcmi/Content/config/translations/english.json
++++ b/Mods/vcmi/Content/config/translations/english.json
+@@ -296,6 +296,12 @@
+ 	"vcmi.adventureOptions.rightButtonDrag.hover": "Right Click Drag",
+ 	"vcmi.adventureOptions.showGrid.help": "{Show Grid}\n\nShow the grid overlay, highlighting the borders between adventure map tiles.",
+ 	"vcmi.adventureOptions.showGrid.hover": "Show Grid",
++	"vcmi.adventureOptions.objectAnimation.hover": "Map animations",
++	"vcmi.adventureOptions.objectAnimation.help": "{Map animations}\n\nFlags, windmills, creatures and other objects on the adventure map move. Turning this off makes the map less work to draw.",
++	"vcmi.adventureOptions.terrainAnimation.hover": "Terrain animations",
++	"vcmi.adventureOptions.terrainAnimation.help": "{Terrain animations}\n\nWater, lava and other animated terrain move. Turning this off makes the map less work to draw.",
++	"vcmi.adventureOptions.townAnimation.hover": "Town animations",
++	"vcmi.adventureOptions.townAnimation.help": "{Town animations}\n\nBuildings in the town screen and creature pictures (fort, recruiting, creature windows) move. Turning this off makes them less work to draw.",
+ 	"vcmi.adventureOptions.skipAdventureMapAnimations.help": "{Skip fading effects}\n\nWhen enabled, Skips object fadeout and similar effects (resource collection, ship embark etc). Makes UI more reactive in some cases at the expense of aesthetics. Especially useful in PvP games. For maximum movement speed skipping is active regardless of this setting.",
+ 	"vcmi.adventureOptions.skipAdventureMapAnimations.hover": "Skip fading effects",
+ 	"vcmi.adventureOptions.smoothDragging.help": "{Smooth Map Dragging}\n\nWhen enabled, map dragging has a modern run out effect.",
+diff --git a/client/widgets/Images.cpp b/client/widgets/Images.cpp
+index a4a1989..bbf4325 100644
+--- a/client/widgets/Images.cpp
++++ b/client/widgets/Images.cpp
+@@ -573,6 +573,14 @@ void CCreatureAnim::reset()
+ 	set(size_t(ECreatureAnimType::HOLDING));
+ }
+ 
++void CCreatureAnim::tick(uint32_t msPassed)
++{
++	// used only for creature pictures (creature windows, blacksmith)
++	if(!settings["adventure"]["townAnimation"].Bool())
++		return;
++	CShowableAnim::tick(msPassed);
++}
++
+ void CCreatureAnim::startPreview(bool warMachine)
+ {
+ 	callback = std::bind(&CCreatureAnim::loopPreview, this, warMachine);
+diff --git a/client/widgets/Images.h b/client/widgets/Images.h
+index c0c37ee..299314a 100644
+--- a/client/widgets/Images.h
++++ b/client/widgets/Images.h
+@@ -231,6 +231,9 @@ public:
+ 
+ 	void startPreview(bool warMachine);
+ 
++	// creature pictures stand still when adventure.townAnimation is off
++	void tick(uint32_t msPassed) override;
++
+ 	//clear queue and set animation to this sequence
+ 	void clearAndSet(ECreatureAnimType type);
+ 
+diff --git a/client/windows/CCastleInterface.cpp b/client/windows/CCastleInterface.cpp
+index 32998c8..cd2137e 100644
+--- a/client/windows/CCastleInterface.cpp
++++ b/client/windows/CCastleInterface.cpp
+@@ -284,7 +284,10 @@ void CBuildingRect::show(Canvas & to)
+ 
+ void CBuildingRect::tick(uint32_t msPassed)
+ {
+-	CShowableAnim::tick(msPassed);
++	// animated buildings can be turned off (adventure.townAnimation): the
++	// first frame stays; building one still fades in (stateTimeCounter)
++	if(settings["adventure"]["townAnimation"].Bool())
++		CShowableAnim::tick(msPassed);
+ 	stateTimeCounter += msPassed;
+ }
+ 
+diff --git a/client/windows/settings/AdventureOptionsTab.cpp b/client/windows/settings/AdventureOptionsTab.cpp
+index 5ab1f17..b0f5e86 100644
+--- a/client/windows/settings/AdventureOptionsTab.cpp
++++ b/client/windows/settings/AdventureOptionsTab.cpp
+@@ -116,6 +116,18 @@ AdventureOptionsTab::AdventureOptionsTab()
+ 	{
+ 		return setBoolSetting("gameTweaks", "forceMovementInfo", value);
+ 	});
++	addCallback("objectAnimationChanged", [](bool value)
++	{
++		return setBoolSetting("adventure", "objectAnimation", value);
++	});
++	addCallback("terrainAnimationChanged", [](bool value)
++	{
++		return setBoolSetting("adventure", "terrainAnimation", value);
++	});
++	addCallback("townAnimationChanged", [](bool value)
++	{
++		return setBoolSetting("adventure", "townAnimation", value);
++	});
+ 	addCallback("showGridChanged", [](bool value)
+ 	{
+ 		return setBoolSetting("gameTweaks", "showGrid", value);
+@@ -191,6 +203,13 @@ AdventureOptionsTab::AdventureOptionsTab()
+ 	std::shared_ptr<CToggleButton> forceMovementInfoCheckbox = widget<CToggleButton>("forceMovementInfoCheckbox");
+ 	forceMovementInfoCheckbox->setSelected(settings["gameTweaks"]["forceMovementInfo"].Bool());
+ 
++	if(auto c = widget<CToggleButton>("objectAnimationCheckbox"))
++		c->setSelected(settings["adventure"]["objectAnimation"].Bool());
++	if(auto c = widget<CToggleButton>("terrainAnimationCheckbox"))
++		c->setSelected(settings["adventure"]["terrainAnimation"].Bool());
++	if(auto c = widget<CToggleButton>("townAnimationCheckbox"))
++		c->setSelected(settings["adventure"]["townAnimation"].Bool());
++
+ 	std::shared_ptr<CToggleButton> showGridCheckbox = widget<CToggleButton>("showGridCheckbox");
+ 	showGridCheckbox->setSelected(settings["gameTweaks"]["showGrid"].Bool());
+ 
+diff --git a/config/schemas/settings.json b/config/schemas/settings.json
+index 31844fe..1609845 100644
+--- a/config/schemas/settings.json
++++ b/config/schemas/settings.json
+@@ -423,7 +423,7 @@
+ 			"type" : "object",
+ 			"additionalProperties" : false,
+ 			"default" : {},
+-			"required" : [ "heroMoveTime", "enemyMoveTime", "scrollSpeedPixels", "heroReminder", "quickCombat", "objectAnimation", "terrainAnimation", "forceQuickCombat", "borderScroll", "leftButtonDrag", "rightButtonDrag", "smoothDragging", "backgroundDimLevel", "hideBackground", "backgroundDimSmallWindows", "tileZoom", "minimapShowHeroes", "showMovePath" ],
++			"required" : [ "heroMoveTime", "enemyMoveTime", "scrollSpeedPixels", "heroReminder", "quickCombat", "objectAnimation", "terrainAnimation", "townAnimation", "forceQuickCombat", "borderScroll", "leftButtonDrag", "rightButtonDrag", "smoothDragging", "backgroundDimLevel", "hideBackground", "backgroundDimSmallWindows", "tileZoom", "minimapShowHeroes", "showMovePath" ],
+ 			"properties" : {
+ 				"heroMoveTime" : {
+ 					"type" : "number",
+@@ -449,6 +449,11 @@
+ 					"type" : "boolean",
+ 					"default" : true
+ 				},
++				"townAnimation" : {
++					"type" : "boolean",
++					"default" : true,
++					"description" : "Animated buildings in towns and animated creature pictures (fort, recruiting, creature windows)"
++				},
+ 				"terrainAnimation" : {
+ 					"type" : "boolean",
+ 					"default" : true
+diff --git a/config/widgets/settings/adventureOptionsTab.json b/config/widgets/settings/adventureOptionsTab.json
+index 33f4548..e91393a 100644
+--- a/config/widgets/settings/adventureOptionsTab.json
++++ b/config/widgets/settings/adventureOptionsTab.json
+@@ -4,6 +4,16 @@
+ 		"config/widgets/commonPrimitives.json",
+ 	],
+ 
++	// RISC OS: ten rows in the right column, so the animation switches fit
++	"customTypes" : {
++		"verticalLayout25" : {
++			"type" : "layout",
++			"vertical" : true,
++			"dynamic" : false,
++			"distance" : 25
++		}
++	},
++
+ 	"items":
+ 	[
+ 		{
+@@ -283,7 +293,7 @@
+ 		
+ /////////////////////////////////////// Right section - Original H3 options + some custom
+ 		{
+-			"type" : "verticalLayout",
++			"type" : "verticalLayout25",
+ 			"customType" : "labelDescription",
+ 			"position": {"x": 415, "y": 55},
+ 			"items":
+@@ -308,11 +318,20 @@
+ 				},
+ 				{
+ 					"text": "vcmi.keyBindings.button.hover"
++				},
++				{
++					"text": "vcmi.adventureOptions.objectAnimation.hover"
++				},
++				{
++					"text": "vcmi.adventureOptions.terrainAnimation.hover"
++				},
++				{
++					"text": "vcmi.adventureOptions.townAnimation.hover"
+ 				}
+ 			]
+ 		},
+ 		{
+-			"type" : "verticalLayout",
++			"type" : "verticalLayout25",
+ 			"customType" : "checkbox",
+ 			"position": {"x": 380, "y": 53},
+ 			"items":
+@@ -352,6 +371,21 @@
+ 					"type": "buttonGear",
+ 					"help": "vcmi.keyBindings.button",
+ 					"callback": "openShortcutMenu"
++				},
++				{
++					"name": "objectAnimationCheckbox",
++					"help": "vcmi.adventureOptions.objectAnimation",
++					"callback": "objectAnimationChanged"
++				},
++				{
++					"name": "terrainAnimationCheckbox",
++					"help": "vcmi.adventureOptions.terrainAnimation",
++					"callback": "terrainAnimationChanged"
++				},
++				{
++					"name": "townAnimationCheckbox",
++					"help": "vcmi.adventureOptions.townAnimation",
++					"callback": "townAnimationChanged"
+ 				}
+ 			]
+ 		},
+-- 
+2.43.0
+

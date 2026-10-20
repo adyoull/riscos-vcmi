@@ -16,3 +16,5 @@
 0016-RISC-OS-sound-fed-from-any-running-thread-log-at-inf.patch
 0017-RISC-OS-the-sound-queue-grows-when-it-runs-dry.patch
 0018-RISC-OS-a-centred-playground-with-black-borders.patch
+0019-RISC-OS-switches-for-map-terrain-and-town-animations.patch
+0020-RISC-OS-scale-with-the-overlay-riscos-mesa-20.3.5-17.patch

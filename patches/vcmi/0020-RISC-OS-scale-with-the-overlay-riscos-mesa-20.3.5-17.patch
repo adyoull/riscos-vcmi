@@ -1,0 +1,288 @@
+From 338a74a4d4f6e857969fdf1533a9e944db5866bb Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Tue, 20 Oct 2026 21:58:35 +0100
+Subject: [PATCH 20/20] RISC OS: scale with the overlay (riscos-mesa
+ 20.3.5-17e)
+
+System Options, General: "Scale with the overlay" (video.overlay). In
+borderless full screen with a Resolution smaller than the screen, the
+window is made with SDL_RISCOS_FB_RENDER_SIZE set to that Resolution and
+SDL_RISCOS_FB_OVERLAY, so riscos-mesa scales the picture to the screen
+through the Pi's VideoOverlay instead of the game showing it centred.
+Decided when the window is made: changes take effect at the next start
+(the game says so). If the render size isn't the one asked for (no EGL
+surface), the picture is centred as before.
+
+getScreenSize() gives the screen's size for the Resolution list and
+the centred check, as the render size is smaller with the overlay.
+
+video.centred and video.overlay are now in the schema's required list,
+so they are saved: settings not listed there are dropped when
+settings.json is written, so riscos7test forgot the centred playground
+on the next start.
+---
+ .../Content/config/translations/english.json  |  3 ++
+ client/render/IScreenHandler.h                |  8 +++
+ client/renderSDL/ScreenHandler.cpp            | 51 ++++++++++++++++++-
+ client/renderSDL/ScreenHandler.h              | 11 ++++
+ client/windows/settings/GeneralOptionsTab.cpp | 15 +++++-
+ config/schemas/settings.json                  |  9 +++-
+ .../widgets/settings/generalOptionsTab.json   |  8 +++
+ 7 files changed, 102 insertions(+), 3 deletions(-)
+
+diff --git a/Mods/vcmi/Content/config/translations/english.json b/Mods/vcmi/Content/config/translations/english.json
+index b97dd4e..87d1287 100644
+--- a/Mods/vcmi/Content/config/translations/english.json
++++ b/Mods/vcmi/Content/config/translations/english.json
+@@ -296,6 +296,9 @@
+ 	"vcmi.adventureOptions.rightButtonDrag.hover": "Right Click Drag",
+ 	"vcmi.adventureOptions.showGrid.help": "{Show Grid}\n\nShow the grid overlay, highlighting the borders between adventure map tiles.",
+ 	"vcmi.adventureOptions.showGrid.hover": "Show Grid",
++	"vcmi.systemOptions.riscosOverlay.hover": "Scale with the overlay",
++	"vcmi.systemOptions.riscosOverlay.help": "{Scale with the overlay}\n\nIn full screen, with a Resolution smaller than the screen, the picture is scaled up to fill the screen by the Raspberry Pi's video overlay (riscos-mesa) instead of being shown centred with black borders. The scaling costs the computer nothing, but the picture is smoothed rather than sharp, and stretched if its shape differs from the screen's. Without the overlay the picture is still scaled, more slowly. Takes effect when VCMI is next started.",
++	"vcmi.systemOptions.riscosOverlay.restart": "This takes effect when VCMI is next started.",
+ 	"vcmi.adventureOptions.objectAnimation.hover": "Map animations",
+ 	"vcmi.adventureOptions.objectAnimation.help": "{Map animations}\n\nFlags, windmills, creatures and other objects on the adventure map move. Turning this off makes the map less work to draw.",
+ 	"vcmi.adventureOptions.terrainAnimation.hover": "Terrain animations",
+diff --git a/client/render/IScreenHandler.h b/client/render/IScreenHandler.h
+index f802360..e20b99d 100644
+--- a/client/render/IScreenHandler.h
++++ b/client/render/IScreenHandler.h
+@@ -64,4 +64,12 @@ public:
+ 	virtual bool hasFocus() = 0;
+ 
+ 	virtual void setColorScheme(ColorScheme scheme) = 0;
++
++#ifdef VCMI_RISCOS
++	/// RISC OS: the size of the screen (the render size can be smaller when
++	/// riscos-mesa scales the picture through the overlay)
++	virtual Point getScreenSize() const = 0;
++	/// The window was made for riscos-mesa to scale through the overlay
++	virtual bool usesOverlay() const = 0;
++#endif
+ };
+diff --git a/client/renderSDL/ScreenHandler.cpp b/client/renderSDL/ScreenHandler.cpp
+index d66e355..96636a7 100644
+--- a/client/renderSDL/ScreenHandler.cpp
++++ b/client/renderSDL/ScreenHandler.cpp
+@@ -51,10 +51,36 @@ SDL_Renderer * mainRenderer = nullptr;
+ static constexpr Point heroes3Resolution = Point(800, 600);
+ 
+ #ifdef VCMI_RISCOS
++Point ScreenHandler::getScreenSize() const
++{
++	if(!usesOverlay() && mainRenderer)
++		return getRenderResolution();
++	SDL_Rect bounds;
++	if(SDL_GetDisplayBounds(getPreferredDisplayIndex(), &bounds) == 0)
++		return Point(bounds.w, bounds.h);
++	return mainRenderer ? getRenderResolution() : Point(0, 0);
++}
++
++bool ScreenHandler::wantsOverlay() const
++{
++	if(getPreferredWindowMode() != EWindowMode::FULLSCREEN_BORDERLESS_WINDOWED || !settings["video"]["centred"].Bool() ||
++	   !settings["video"]["overlay"].Bool())
++		return false;
++	SDL_Rect bounds;
++	if(SDL_GetDisplayBounds(getPreferredDisplayIndex(), &bounds) != 0)
++		return false;
++	int width = settings["video"]["resolution"]["width"].Integer();
++	int height = settings["video"]["resolution"]["height"].Integer();
++	return width >= heroes3Resolution.x && height >= heroes3Resolution.y && width <= bounds.w && height <= bounds.h &&
++		(width < bounds.w || height < bounds.h);
++}
++
+ bool ScreenHandler::isCentred() const
+ {
+ 	if(getPreferredWindowMode() != EWindowMode::FULLSCREEN_BORDERLESS_WINDOWED || !settings["video"]["centred"].Bool())
+ 		return false;
++	if(usesOverlay())
++		return false; // riscos-mesa scales it
+ 	Point render = getRenderResolution();
+ 	int width = settings["video"]["resolution"]["width"].Integer();
+ 	int height = settings["video"]["resolution"]["height"].Integer();
+@@ -394,6 +420,15 @@ void ScreenHandler::initializeWindow()
+ 		handleFatalError(message, true);
+ 	}
+ 
++#ifdef VCMI_RISCOS
++	if(usesOverlay() && getRenderResolution() != overlaySize)
++	{
++		// riscos-mesa couldn't (no EGL surface): an ordinary window, so
++		// centred as without the overlay
++		logGlobal->info("RISC OS: no overlay scaling (render size %dx%d)", getRenderResolution().x, getRenderResolution().y);
++		overlaySize = Point(0, 0);
++	}
++#endif
+ 	selectUpscalingFilter();
+ 	selectDownscalingFilter();
+ 
+@@ -508,6 +543,20 @@ SDL_Window * ScreenHandler::createWindowImpl(Point dimensions, int flags, bool c
+ 
+ SDL_Window * ScreenHandler::createWindow()
+ {
++#ifdef VCMI_RISCOS
++	// The overlay: riscos-mesa gives a window surface of the chosen size and
++	// scales it to the screen. Otherwise the hints are left alone, so the
++	// system variables of the same names still work.
++	overlaySize = Point(0, 0);
++	if(wantsOverlay())
++	{
++		overlaySize = Point(settings["video"]["resolution"]["width"].Integer(), settings["video"]["resolution"]["height"].Integer());
++		std::string size = std::to_string(overlaySize.x) + "x" + std::to_string(overlaySize.y);
++		SDL_SetHint("SDL_RISCOS_FB_RENDER_SIZE", size.c_str());
++		SDL_SetHint("SDL_RISCOS_FB_OVERLAY", "1");
++		logGlobal->info("RISC OS: %s scaled to the screen by riscos-mesa (overlay)", size);
++	}
++#endif
+ #ifndef VCMI_MOBILE
+ 	Point dimensions = getPreferredWindowResolution();
+ 
+@@ -797,7 +846,7 @@ std::vector<Point> ScreenHandler::getSupportedResolutions( int displayIndex) con
+ 			{1280, 1024}, {1360, 768}, {1366, 768}, {1440, 900}, {1600, 900}, {1600, 1200}, {1680, 1050},
+ 			{1920, 1080}, {1920, 1200}, {2560, 1440}
+ 		};
+-		Point screenSize = getRenderResolution();
++		Point screenSize = getScreenSize();
+ 		for(const auto & size : sizes)
+ 			if(size.x <= screenSize.x && size.y <= screenSize.y && size != screenSize)
+ 				result.push_back(size);
+diff --git a/client/renderSDL/ScreenHandler.h b/client/renderSDL/ScreenHandler.h
+index e20d0fb..f9eca0e 100644
+--- a/client/renderSDL/ScreenHandler.h
++++ b/client/renderSDL/ScreenHandler.h
+@@ -61,6 +61,13 @@ class ScreenHandler final : public IScreenHandler
+ 	/// The area the game's picture is made for: the window, or the chosen
+ 	/// Resolution when centred.
+ 	Point getPlaygroundResolution() const;
++	/// Full screen (borderless), "Scale with the overlay" set and a
++	/// Resolution smaller than the screen: riscos-mesa scales the picture
++	/// (SDL_RISCOS_FB_RENDER_SIZE, SDL_RISCOS_FB_OVERLAY). Decided when the
++	/// window is made.
++	bool wantsOverlay() const;
++	/// The render size the window was made with (0 x 0: none)
++	Point overlaySize;
+ #endif
+ 
+ 	/// Dimensions of output window, if different from logicalResolution SDL will perform scaling
+@@ -138,4 +145,8 @@ public:
+ 	void screenShot() const final;
+ 
+ 	void setColorScheme(ColorScheme filter) final;
++#ifdef VCMI_RISCOS
++	Point getScreenSize() const final;
++	bool usesOverlay() const final { return overlaySize.x > 0; }
++#endif
+ };
+diff --git a/client/windows/settings/GeneralOptionsTab.cpp b/client/windows/settings/GeneralOptionsTab.cpp
+index 05bd4dc..914afce 100644
+--- a/client/windows/settings/GeneralOptionsTab.cpp
++++ b/client/windows/settings/GeneralOptionsTab.cpp
+@@ -16,6 +16,7 @@
+ #include "media/ISoundPlayer.h"
+ #include "render/IScreenHandler.h"
+ #include "windows/GUIClasses.h"
++#include "windows/InfoWindows.h"
+ 
+ #include "../../eventsSDL/InputHandler.h"
+ #include "../../GameEngine.h"
+@@ -186,6 +187,12 @@ GeneralOptionsTab::GeneralOptionsTab()
+ 		setBoolSetting("general", "audioMuteFocus", value);
+ 	});
+ 
++	addCallback("riscosOverlayChanged", [](bool value)
++	{
++		setBoolSetting("video", "overlay", value);
++		// the window is made for it when VCMI starts
++		CInfoWindow::showInfoDialog(LIBRARY->generaltexth->translate("vcmi.systemOptions.riscosOverlay.restart"), {});
++	});
+ 	addCallback("enableSubtitleChanged", [](bool value)
+ 	{
+ 		setBoolSetting("general", "enableSubtitle", value);
+@@ -249,6 +256,9 @@ GeneralOptionsTab::GeneralOptionsTab()
+ 	if (audioMuteFocusCheckbox)
+ 		audioMuteFocusCheckbox->setSelected(settings["general"]["audioMuteFocus"].Bool());
+ 
++	if (auto riscosOverlayCheckbox = widget<CToggleButton>("riscosOverlayCheckbox"))
++		riscosOverlayCheckbox->setSelected(settings["video"]["overlay"].Bool());
++
+ 	std::shared_ptr<CToggleButton> enableSubtitleCheckbox = widget<CToggleButton>("enableSubtitleCheckbox");
+ 	if (enableSubtitleCheckbox)
+ 		enableSubtitleCheckbox->setSelected(settings["general"]["enableSubtitle"].Bool());
+@@ -297,6 +307,7 @@ void GeneralOptionsTab::updateResolutionSelector()
+ 	{
+ 		Point resolution = ENGINE->screenHandler().getRenderResolution();
+ #ifdef VCMI_RISCOS
++		resolution = ENGINE->screenHandler().getScreenSize();
+ 		if (settings["video"]["fullscreen"].Bool() && !settings["video"]["realFullscreen"].Bool() && settings["video"]["centred"].Bool())
+ 		{
+ 			Point chosen(settings["video"]["resolution"]["width"].Integer(), settings["video"]["resolution"]["height"].Integer());
+@@ -351,8 +362,10 @@ void GeneralOptionsTab::setGameResolution(int index)
+ 	{
+ 		// smaller than the screen: centred with black borders; the screen's
+ 		// size: fill it as before
+-		Point screenSize = ENGINE->screenHandler().getRenderResolution();
++		Point screenSize = ENGINE->screenHandler().getScreenSize();
+ 		setBoolSetting("video", "centred", resolution.x < screenSize.x || resolution.y < screenSize.y);
++		if (ENGINE->screenHandler().usesOverlay())
++			CInfoWindow::showInfoDialog(LIBRARY->generaltexth->translate("vcmi.systemOptions.riscosOverlay.restart"), {});
+ 	}
+ #endif
+ 
+diff --git a/config/schemas/settings.json b/config/schemas/settings.json
+index 1609845..bcf916d 100644
+--- a/config/schemas/settings.json
++++ b/config/schemas/settings.json
+@@ -231,7 +231,9 @@
+ 				"downscalingFilter",
+ 				"allowPortrait",
+ 				"asyncUpscaling",
+-				"useHdTextures"
++				"useHdTextures",
++				"centred",
++				"overlay"
+ 			],
+ 			"properties" : {
+ 				"resolution" : {
+@@ -295,6 +297,11 @@
+ 					"default" : false,
+ 					"description" : "RISC OS: in borderless full screen, a resolution smaller than the screen is shown centred, unscaled (or at a whole-number scale), with black borders"
+ 				},
++				"overlay" : {
++					"type" : "boolean",
++					"default" : false,
++					"description" : "RISC OS: when the Resolution is smaller than the screen (full screen, borderless), riscos-mesa scales it to fill the screen through the Raspberry Pi's video overlay instead of showing it centred. Takes effect when VCMI is next started"
++				},
+ 				"targetfps" : {
+ 					"type" : "number",
+ 					"default" : 30
+diff --git a/config/widgets/settings/generalOptionsTab.json b/config/widgets/settings/generalOptionsTab.json
+index 63f188f..1abcde1 100644
+--- a/config/widgets/settings/generalOptionsTab.json
++++ b/config/widgets/settings/generalOptionsTab.json
+@@ -230,6 +230,9 @@
+ 				},
+ 				{
+ 					"text": "core.genrltxt.575"
++				},
++				{
++					"text": "vcmi.systemOptions.riscosOverlay.hover"
+ 				}
+ 			]
+ 		},
+@@ -247,6 +250,11 @@
+ 					"name": "enableSubtitleCheckbox",
+ 					"help": "core.help.363",
+ 					"callback": "enableSubtitleChanged"
++				},
++				{
++					"name": "riscosOverlayCheckbox",
++					"help": "vcmi.systemOptions.riscosOverlay",
++					"callback": "riscosOverlayChanged"
+ 				}
+ 			]
+ 		},
+-- 
+2.43.0
+

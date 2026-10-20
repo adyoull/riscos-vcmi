@@ -31,6 +31,12 @@ RMEnsure SharedSound 1.07 IfThere System:Modules.SSound Then RMLoad System:Modul
 RMEnsure StreamManager 0.03 IfThere System:Modules.StreamMan Then RMLoad System:Modules.StreamMan
 RMEnsure SharedSoundBuffer 0.07 IfThere System:Modules.SSBuffer Then RMLoad System:Modules.SSBuffer
 
+| --- Scaling with the overlay (Raspberry Pi) ---------------------------
+| With "Scale with the overlay" on (System Options) and a Resolution
+| smaller than the screen in full screen, riscos-mesa scales the picture
+| through VideoOverlay. Loaded from !System if there.
+RMEnsure VideoOverlay 0.00 IfThere System:Modules.VideoOverlay Then RMLoad System:Modules.VideoOverlay
+
 | --- Logging ----------------------------------------------------------
 | VCMI always writes its own log, <Choices$Write>.VCMI.Cache.VCMI_Client_log/txt.
 | For the program's other output too (useful when reporting a problem),
