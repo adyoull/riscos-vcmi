@@ -1,7 +1,7 @@
 From 80189e1c6b43c40ffa1d5f27586ce44051a60cfc Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:38:28 +0100
-Subject: [PATCH 02/17] RISC OS: a stand-in for oneTBB
+Subject: [PATCH 02/18] RISC OS: a stand-in for oneTBB
 
 riscos/tbb: serial parallel loops, real threads for task_group and
 task_arena (the AI needs at least 4 workers that can block), mutex-guarded

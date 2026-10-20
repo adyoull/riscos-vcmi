@@ -45,6 +45,11 @@ covers the screen, so other programs keep running).
 
 Settings, saved games and the log are kept in <Choices$Write>.VCMI.
 
+Full screen (borderless) with a Resolution smaller than the screen
+(System Options, General: Resolution) shows the game at that size,
+centred, with black borders: sharp, and less work than filling the
+screen. Choosing the screen's own size fills it again.
+
 It draws 30 frames a second (video.targetfps in
 <Choices$Write>.VCMI.Config.settings/json changes it). To make it
 lighter on the processor: a lower Resolution, or a higher Scaling, in

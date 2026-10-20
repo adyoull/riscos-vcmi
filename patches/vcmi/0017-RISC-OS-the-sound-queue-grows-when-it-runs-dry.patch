@@ -1,7 +1,7 @@
 From aedc3130e945701829516a7f30443bdec652860e Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 17:14:36 +0100
-Subject: [PATCH 17/17] RISC OS: the sound queue grows when it runs dry
+Subject: [PATCH 17/18] RISC OS: the sound queue grows when it runs dry
 
 It keeps about 190 ms queued, 2 blocks (46 ms) more each time it runs dry,
 up to about 370 ms, and a block less after each 20 s without running dry.

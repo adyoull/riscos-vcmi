@@ -36,13 +36,28 @@ static uint32_t pix(SDL_Surface * s, int x, int y)
 
 struct Ptr { SDL_Surface * img; int x, y; bool shown; };
 
-static void reference(SDL_Surface * ref, SDL_Surface * screen, const Ptr & ptr, bool swap)
+static void reference(SDL_Surface * ref, SDL_Surface * screen, const Ptr & ptr, bool swap, bool centred)
 {
+	// stretched to the whole target, or centred at a whole-number scale
+	int tw = ref->w, th = ref->h, ox = 0, oy = 0;
+	if(centred)
+	{
+		int k = std::max(1, std::min(ref->w / screen->w, ref->h / screen->h));
+		tw = std::min(screen->w * k, ref->w);
+		th = std::min(screen->h * k, ref->h);
+		ox = (ref->w - tw) / 2;
+		oy = (ref->h - th) / 2;
+	}
 	for(int dy = 0; dy < ref->h; dy++)
 		for(int dx = 0; dx < ref->w; dx++)
 		{
-			int sx = static_cast<int>(static_cast<int64_t>(dx) * screen->w / ref->w);
-			int sy = static_cast<int>(static_cast<int64_t>(dy) * screen->h / ref->h);
+			if(dx < ox || dx >= ox + tw || dy < oy || dy >= oy + th)
+			{
+				reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(ref->pixels) + dy * ref->pitch)[dx] = 0;
+				continue;
+			}
+			int sx = static_cast<int>(static_cast<int64_t>(dx - ox) * screen->w / tw);
+			int sy = static_cast<int>(static_cast<int64_t>(dy - oy) * screen->h / th);
 			uint32_t c = pix(screen, sx, sy);
 			if(ptr.shown && sx >= ptr.x && sx < ptr.x + ptr.img->w && sy >= ptr.y && sy < ptr.y + ptr.img->h)
 				c = blendRef(pix(ptr.img, sx - ptr.x, sy - ptr.y), c);
@@ -66,8 +81,9 @@ static void randomFill(SDL_Surface * s, std::mt19937 & rng, int changes)
 	}
 }
 
-static void runCase(int sw, int sh, int dw, int dh, bool swap, unsigned seed)
+static void runCase(int sw, int sh, int dw, int dh, bool swap, unsigned seed, bool centred = false)
 {
+	riscos::presentSetCentred(centred);
 	std::mt19937 rng(seed);
 	SDL_Surface * screen = SDL_CreateRGBSurfaceWithFormat(0, sw, sh, 32, SDL_PIXELFORMAT_ARGB8888);
 	SDL_Surface * target = SDL_CreateRGBSurfaceWithFormat(0, dw, dh, 32, swap ? SDL_PIXELFORMAT_XBGR8888 : SDL_PIXELFORMAT_XRGB8888);
@@ -81,6 +97,7 @@ static void runCase(int sw, int sh, int dw, int dh, bool swap, unsigned seed)
 			uint32_t a = (x + y) % 5 == 0 ? 0 : (x % 3 == 0 ? 255 : rng() % 256);
 			reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(img->pixels) + y * img->pitch)[x] = (a << 24) | (rng() & 0xffffff);
 		}
+	std::memset(target->pixels, 0x55, static_cast<size_t>(target->pitch) * dh); // borders must be painted
 	riscos::presentReset();
 	Ptr ptr{img, sw / 2, sh / 2, true};
 	int frameFailures = 0;
@@ -96,14 +113,14 @@ static void runCase(int sw, int sh, int dw, int dh, bool swap, unsigned seed)
 		riscos::presentSetPointer(ptr.shown ? img : nullptr, ptr.x, ptr.y);
 		std::memcpy(before->pixels, target->pixels, static_cast<size_t>(target->pitch) * dh); // raw copy, no conversion
 		std::vector<SDL_Rect> rects = riscos::presentToSurface(target, screen);
-		reference(ref, screen, ptr, swap);
+		reference(ref, screen, ptr, swap, centred);
 		for(int y = 0; y < dh && !frameFailures; y++)
 			for(int x = 0; x < dw; x++)
 			{
 				uint32_t got = pix(target, x, y), want = pix(ref, x, y);
 				if(got != want)
 				{
-					std::printf("FAIL %dx%d->%dx%d swap %d seed %u frame %d: (%d,%d) %08x want %08x\n", sw, sh, dw, dh, swap, seed, frame, x, y, got, want);
+					std::printf("FAIL %dx%d->%dx%d swap %d centred %d seed %u frame %d: (%d,%d) %08x want %08x\n", sw, sh, dw, dh, swap, centred, seed, frame, x, y, got, want);
 					frameFailures++;
 					break;
 				}
@@ -140,6 +157,19 @@ int main()
 		for(int swap = 0; swap < 2; swap++)
 			for(int run = 0; run < 3; run++)
 				runCase(s.sw, s.sh, s.dw, s.dh, swap, seed++);
+	// centred, black borders: 1x with borders both ways, 2x, odd margins,
+	// and the same size (no borders)
+	struct { int sw, sh, dw, dh; } centred[] = {
+		{1280, 720, 1920, 1080},
+		{800, 600, 1920, 1200},
+		{801, 599, 1366, 768},
+		{960, 600, 1920, 1200},
+		{1024, 768, 1024, 768},
+	};
+	for(auto & s : centred)
+		for(int swap = 0; swap < 2; swap++)
+			for(int run = 0; run < 2; run++)
+				runCase(s.sw, s.sh, s.dw, s.dh, swap, seed++, true);
 	std::printf("%s (%d failures)\n", failures ? "FAILED" : "PASS", failures);
 	return failures ? 1 : 0;
 }

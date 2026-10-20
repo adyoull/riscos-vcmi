@@ -1,5 +1,16 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos7test (not released)
+- A centred playground with black borders (David Feugey's suggestion on the
+  ROOL forum): in full screen (borderless), the Resolution in System
+  Options is now the size of the playground. Smaller than the screen, the
+  game is drawn at that size and shown centred at the largest whole-number
+  scale that fits (1280x720 on a 1920x1080 screen: as it is, with black
+  borders), instead of being stretched; the screen's own size fills it as
+  before. Sharper, and less work: the game draws fewer pixels and nothing
+  is stretched. SDL maps the mouse with the same scale and borders
+  (SDL_RenderSetIntegerScale). The setting is `video.centred`.
+
 ## 1.7.5-riscos1 (2026-10-19)
 - The first release: the same program as 1.7.5-riscos6test ("no stuttering
   at all now" on a Pi 4), with the vcmilog off by default (`!Run` turns it

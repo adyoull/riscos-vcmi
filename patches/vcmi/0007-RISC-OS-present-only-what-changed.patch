@@ -1,7 +1,7 @@
 From 978ab77844aad698a5333f9223c02350de43b8df Mon Sep 17 00:00:00 2001
 From: Andrew Youll <adyoull@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:54:12 +0100
-Subject: [PATCH 07/17] RISC OS: present only what changed
+Subject: [PATCH 07/18] RISC OS: present only what changed
 
 VCMI uploads the whole screen to a texture every frame and has SDL's
 renderer scale and present it. On RISC OS that's SDL's software renderer,

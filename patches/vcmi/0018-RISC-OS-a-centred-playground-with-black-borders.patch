@@ -1,0 +1,385 @@
+From da3f8c1e5b391300b77242c10f40d6382ddc00e2 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Tue, 20 Oct 2026 20:28:00 +0100
+Subject: [PATCH 18/18] RISC OS: a centred playground with black borders
+
+In full screen (borderless) the Resolution in System Options is the size
+of the playground. When it is smaller than the screen, the logical size
+comes from it (getPlaygroundResolution), SDL_RenderSetIntegerScale centres
+it at the largest whole-number scale that fits and maps the mouse to
+match, and the presenter draws it there with black borders. The screen's
+own size fills the screen as before. video.centred records the choice;
+switching to borderless full screen clears it.
+---
+ client/renderSDL/ScreenHandler.cpp            | 58 +++++++++++++++
+ client/renderSDL/ScreenHandler.h              |  9 +++
+ client/windows/settings/GeneralOptionsTab.cpp | 26 +++++++
+ config/schemas/settings.json                  |  5 ++
+ riscos/riscos_present.cpp                     | 72 ++++++++++++++++---
+ riscos/riscos_present.h                       |  6 ++
+ 6 files changed, 167 insertions(+), 9 deletions(-)
+
+diff --git a/client/renderSDL/ScreenHandler.cpp b/client/renderSDL/ScreenHandler.cpp
+index 9dfc5c3..d66e355 100644
+--- a/client/renderSDL/ScreenHandler.cpp
++++ b/client/renderSDL/ScreenHandler.cpp
+@@ -50,6 +50,27 @@ SDL_Renderer * mainRenderer = nullptr;
+ 
+ static constexpr Point heroes3Resolution = Point(800, 600);
+ 
++#ifdef VCMI_RISCOS
++bool ScreenHandler::isCentred() const
++{
++	if(getPreferredWindowMode() != EWindowMode::FULLSCREEN_BORDERLESS_WINDOWED || !settings["video"]["centred"].Bool())
++		return false;
++	Point render = getRenderResolution();
++	int width = settings["video"]["resolution"]["width"].Integer();
++	int height = settings["video"]["resolution"]["height"].Integer();
++	return width >= heroes3Resolution.x && height >= heroes3Resolution.y && (width < render.x || height < render.y);
++}
++
++Point ScreenHandler::getPlaygroundResolution() const
++{
++	Point render = getRenderResolution();
++	if(!isCentred())
++		return render;
++	return Point(std::min<int>(settings["video"]["resolution"]["width"].Integer(), render.x),
++		std::min<int>(settings["video"]["resolution"]["height"].Integer(), render.y));
++}
++#endif
++
+ std::tuple<int, int> ScreenHandler::getSupportedScalingRange() const
+ {
+ 	// H3 resolution, any resolution smaller than that is not correctly supported
+@@ -57,7 +78,11 @@ std::tuple<int, int> ScreenHandler::getSupportedScalingRange() const
+ 	// arbitrary limit on *downscaling*. Allow some downscaling, if requested by user. Should be generally limited to 100+ for all but few devices
+ 	static constexpr double minimalScaling = 50;
+ 
++#ifdef VCMI_RISCOS
++	Point renderResolution = getPlaygroundResolution();
++#else
+ 	Point renderResolution = getRenderResolution();
++#endif
+ 	double reservedAreaWidth = settings["video"]["reservedWidth"].Float();
+ 	Point availableResolution = Point(renderResolution.x * (1 - reservedAreaWidth), renderResolution.y);
+ 	if(renderResolution.x < renderResolution.y) // reserved in portrait mode
+@@ -123,7 +148,11 @@ int ScreenHandler::getInterfaceScalingPercentage() const
+ 
+ Point ScreenHandler::getPreferredLogicalResolution() const
+ {
++#ifdef VCMI_RISCOS
++	Point renderResolution = getPlaygroundResolution();
++#else
+ 	Point renderResolution = getRenderResolution();
++#endif
+ 	double reservedAreaWidth = settings["video"]["reservedWidth"].Float();
+ 
+ 	int scaling = getInterfaceScalingPercentage();
+@@ -438,6 +467,15 @@ void ScreenHandler::initializeScreenBuffers()
+ 
+ 	auto logicalSize = getPreferredLogicalResolution() * getScalingFactor();
+ 	SDL_RenderSetLogicalSize(mainRenderer, logicalSize.x, logicalSize.y);
++#ifdef VCMI_RISCOS
++	{
++		// centred: SDL maps the mouse with the same whole-number scale and
++		// borders as the presenter draws
++		bool centred = isCentred();
++		SDL_RenderSetIntegerScale(mainRenderer, centred ? SDL_TRUE : SDL_FALSE);
++		riscos::presentSetCentred(centred);
++	}
++#endif
+ 
+ 	screen = SDL_CreateRGBSurface(0, logicalSize.x, logicalSize.y, 32, rmask, gmask, bmask, amask);
+ 	if(nullptr == screen)
+@@ -748,6 +786,26 @@ std::vector<Point> ScreenHandler::getSupportedResolutions( int displayIndex) con
+ 
+ 	std::vector<Point> result;
+ 
++#ifdef VCMI_RISCOS
++	if(getPreferredWindowMode() == EWindowMode::FULLSCREEN_BORDERLESS_WINDOWED && mainRenderer)
++	{
++		// Full screen (borderless): the size of the playground, shown centred
++		// with black borders when smaller than the screen. The screen's own
++		// size fills it as before.
++		static const Point sizes[] = {
++			{800, 600}, {1024, 600}, {1024, 768}, {1152, 864}, {1280, 720}, {1280, 800}, {1280, 960},
++			{1280, 1024}, {1360, 768}, {1366, 768}, {1440, 900}, {1600, 900}, {1600, 1200}, {1680, 1050},
++			{1920, 1080}, {1920, 1200}, {2560, 1440}
++		};
++		Point screenSize = getRenderResolution();
++		for(const auto & size : sizes)
++			if(size.x <= screenSize.x && size.y <= screenSize.y && size != screenSize)
++				result.push_back(size);
++		result.push_back(screenSize);
++		return result;
++	}
++#endif
++
+ 	int modesCount = SDL_GetNumDisplayModes(displayIndex);
+ 
+ 	for (int i =0; i < modesCount; ++i)
+diff --git a/client/renderSDL/ScreenHandler.h b/client/renderSDL/ScreenHandler.h
+index 5098e6c..e20d0fb 100644
+--- a/client/renderSDL/ScreenHandler.h
++++ b/client/renderSDL/ScreenHandler.h
+@@ -53,6 +53,15 @@ class ScreenHandler final : public IScreenHandler
+ 
+ 	/// Dimensions of target surfaces/textures, this value is what game logic views as screen size
+ 	Point getPreferredLogicalResolution() const;
++#ifdef VCMI_RISCOS
++	/// RISC OS: full screen (borderless) with a Resolution smaller than the
++	/// screen: the game is drawn at that size and shown centred, at a
++	/// whole-number scale, with black borders.
++	bool isCentred() const;
++	/// The area the game's picture is made for: the window, or the chosen
++	/// Resolution when centred.
++	Point getPlaygroundResolution() const;
++#endif
+ 
+ 	/// Dimensions of output window, if different from logicalResolution SDL will perform scaling
+ 	/// This value is what player views as window size
+diff --git a/client/windows/settings/GeneralOptionsTab.cpp b/client/windows/settings/GeneralOptionsTab.cpp
+index 313c003..05bd4dc 100644
+--- a/client/windows/settings/GeneralOptionsTab.cpp
++++ b/client/windows/settings/GeneralOptionsTab.cpp
+@@ -281,15 +281,29 @@ void GeneralOptionsTab::updateResolutionSelector()
+ 
+ 	if (resolutionButton)
+ 	{
++#ifdef VCMI_RISCOS
++		// RISC OS: in full screen (borderless) the Resolution is the size of
++		// the playground, centred with black borders if smaller than the screen
++		resolutionButton->enable();
++#else
+ 		if (settings["video"]["fullscreen"].Bool() && !settings["video"]["realFullscreen"].Bool())
+ 			resolutionButton->disable();
+ 		else
+ 			resolutionButton->enable();
++#endif
+ 	}
+ 
+ 	if (resolutionLabel)
+ 	{
+ 		Point resolution = ENGINE->screenHandler().getRenderResolution();
++#ifdef VCMI_RISCOS
++		if (settings["video"]["fullscreen"].Bool() && !settings["video"]["realFullscreen"].Bool() && settings["video"]["centred"].Bool())
++		{
++			Point chosen(settings["video"]["resolution"]["width"].Integer(), settings["video"]["resolution"]["height"].Integer());
++			if (chosen.x <= resolution.x && chosen.y <= resolution.y)
++				resolution = chosen;
++		}
++#endif
+ 		resolutionLabel->setText(resolutionToLabelString(resolution.x, resolution.y));
+ 	}
+ }
+@@ -332,6 +346,15 @@ void GeneralOptionsTab::setGameResolution(int index)
+ 	Settings gameRes = settings.write["video"]["resolution"];
+ 	gameRes["width"].Float() = resolution.x;
+ 	gameRes["height"].Float() = resolution.y;
++#ifdef VCMI_RISCOS
++	if (settings["video"]["fullscreen"].Bool() && !settings["video"]["realFullscreen"].Bool())
++	{
++		// smaller than the screen: centred with black borders; the screen's
++		// size: fill it as before
++		Point screenSize = ENGINE->screenHandler().getRenderResolution();
++		setBoolSetting("video", "centred", resolution.x < screenSize.x || resolution.y < screenSize.y);
++	}
++#endif
+ 
+ 	widget<CLabel>("resolutionLabel")->setText(resolutionToLabelString(resolution.x, resolution.y));
+ 
+@@ -347,6 +370,9 @@ void GeneralOptionsTab::setFullscreenMode(bool on, bool exclusive)
+ 
+ 	setBoolSetting("video", "realFullscreen", exclusive);
+ 	setBoolSetting("video", "fullscreen", on);
++#ifdef VCMI_RISCOS
++	setBoolSetting("video", "centred", false); // starts filling the screen; Resolution centres it
++#endif
+ 
+ 	std::shared_ptr<CToggleButton> fullscreenExclusiveCheckbox = widget<CToggleButton>("fullscreenExclusiveCheckbox");
+ 	std::shared_ptr<CToggleButton> fullscreenBorderlessCheckbox = widget<CToggleButton>("fullscreenBorderlessCheckbox");
+diff --git a/config/schemas/settings.json b/config/schemas/settings.json
+index 2b1f879..31844fe 100644
+--- a/config/schemas/settings.json
++++ b/config/schemas/settings.json
+@@ -290,6 +290,11 @@
+ 						"marginLeftRight" : { "type" : "number",  "default" : 7 }
+ 					}
+ 				},
++				"centred" : {
++					"type" : "boolean",
++					"default" : false,
++					"description" : "RISC OS: in borderless full screen, a resolution smaller than the screen is shown centred, unscaled (or at a whole-number scale), with black borders"
++				},
+ 				"targetfps" : {
+ 					"type" : "number",
+ 					"default" : 30
+diff --git a/riscos/riscos_present.cpp b/riscos/riscos_present.cpp
+index d1e132d..0ef3644 100644
+--- a/riscos/riscos_present.cpp
++++ b/riscos/riscos_present.cpp
+@@ -84,6 +84,9 @@ struct Presenter
+ 	int sw = 0, sh = 0;           // logical size
+ 	SDL_Surface * surface = nullptr;
+ 	int dw = 0, dh = 0;           // surface size
++	bool centred = false;         // whole-number scale, centred, black borders
++	int ox = 0, oy = 0;           // where the picture starts in the surface
++	int tw = 0, th = 0;           // and its size there
+ 	Uint32 format = 0;
+ 	bool direct = false;          // 32-bit RGB in either order: drawn here
+ 	bool swap = false;            // XBGR (the usual RISC OS order)
+@@ -110,6 +113,25 @@ struct Presenter
+ };
+ 
+ Presenter p;
++bool presentCentred = false; // presentSetCentred
++
++/// Paints the surface outside the picture black (centred).
++void clearBorders()
++{
++	auto * pixels = static_cast<uint8_t *>(p.surface->pixels);
++	int pitch = p.surface->pitch;
++	for(int y = 0; y < p.dh; y++)
++	{
++		auto * row = reinterpret_cast<uint32_t *>(pixels + static_cast<size_t>(y) * pitch);
++		if(y < p.oy || y >= p.oy + p.th)
++			std::fill(row, row + p.dw, 0u);
++		else
++		{
++			std::fill(row, row + p.ox, 0u);
++			std::fill(row + p.ox + p.tw, row + p.dw, 0u);
++		}
++	}
++}
+ 
+ /// Nearest-neighbour map from nDst positions onto nSrc, and its inverse
+ /// (start[s] = first destination showing source s; start[nSrc] = nDst).
+@@ -140,25 +162,44 @@ bool setup(SDL_Surface * surface, int sw, int sh)
+ 	if(std::getenv("RISCOS_PRESENT_SWAP"))
+ 		p.swap = true;
+ #endif
++	p.centred = presentCentred;
++	if(p.centred)
++	{
++		// as SDL's renderer with SDL_RenderSetIntegerScale (which maps the
++		// mouse): the largest whole-number scale that fits, at least 1
++		int k = std::min(p.dw / sw, p.dh / sh);
++		if(k < 1)
++			k = 1;
++		p.tw = std::min(sw * k, p.dw);
++		p.th = std::min(sh * k, p.dh);
++		p.ox = (p.dw - p.tw) / 2;
++		p.oy = (p.dh - p.th) / 2;
++	}
++	else
++	{
++		p.ox = p.oy = 0;
++		p.tw = p.dw;
++		p.th = p.dh;
++	}
+ 	p.cols = (sw + CELL_W - 1) / CELL_W;
+ 	p.bands = (sh + CELL_H - 1) / CELL_H;
+ 	p.shadow.assign(static_cast<size_t>(sw) * sh, 0);
+-	p.rowbuf.assign(p.dw, 0);
++	p.rowbuf.assign(p.tw, 0);
+ 	p.srcbuf.assign(sw, 0);
+-	p.sameWidth = p.dw == sw;
++	p.sameWidth = p.tw == sw;
+ 	p.dirty.assign(static_cast<size_t>(p.cols) * p.bands, 1);
+ 	p.rects.assign(static_cast<size_t>(p.cols) * p.bands, CellRect{});
+ 	p.open.assign(p.cols, 0);
+ 	p.next.assign(p.cols, 0);
+-	makeMap(p.xmap, p.xstart, sw, p.dw);
+-	makeMap(p.ymap, p.ystart, sh, p.dh);
++	makeMap(p.xmap, p.xstart, sw, p.tw);
++	makeMap(p.ymap, p.ystart, sh, p.th);
+ #ifdef __arm__
+ 	p.differ = SDL_HasNEON() ? pixelsDifferNeon : pixelsDifferWords;
+ 	p.convert = SDL_HasNEON() ? convertRowNeon : convertRowWords;
+ #endif
+ 	p.full = true;
+ 	p.drawnPointer.shown = false;
+-	PRESENT_LOG("RISC OS presenter: %d x %d shown in %d x %d (%s, %s; %s compare)", sw, sh, p.dw, p.dh,
++	PRESENT_LOG("RISC OS presenter: %d x %d shown as %d x %d at %d,%d in %d x %d (%s, %s; %s compare)", sw, sh, p.tw, p.th, p.ox, p.oy, p.dw, p.dh,
+ 		SDL_GetPixelFormatName(p.format), p.direct ? (p.swap ? "drawn, red and blue swapped" : "drawn") : "by SDL",
+ 		p.differ == pixelsDifferWords ? "word" : "NEON");
+ 	return true;
+@@ -318,8 +359,8 @@ SDL_Rect drawRect(const CellRect & r)
+ 	SDL_Rect out;
+ 	int dx0 = p.xstart[r.x0], dx1 = p.xstart[r.x1];
+ 	int dy0 = p.ystart[r.y0], dy1 = p.ystart[r.y1];
+-	out.x = dx0;
+-	out.y = dy0;
++	out.x = dx0 + p.ox;
++	out.y = dy0 + p.oy;
+ 	out.w = dx1 - dx0;
+ 	out.h = dy1 - dy0;
+ 	if(out.w <= 0 || out.h <= 0)
+@@ -371,7 +412,7 @@ SDL_Rect drawRect(const CellRect & r)
+ 			}
+ 			lastSy = sy;
+ 		}
+-		std::memcpy(pixels + static_cast<size_t>(dy) * pitch + static_cast<size_t>(dx0) * 4, p.rowbuf.data(), static_cast<size_t>(out.w) * 4);
++		std::memcpy(pixels + static_cast<size_t>(dy + p.oy) * pitch + static_cast<size_t>(dx0 + p.ox) * 4, p.rowbuf.data(), static_cast<size_t>(out.w) * 4);
+ 	}
+ 	p.pixels += static_cast<unsigned>(out.w * out.h);
+ 	return out;
+@@ -388,9 +429,12 @@ std::vector<SDL_Rect> present(SDL_Surface * screen)
+ 	if(std::getenv("RISCOS_PRESENT_FULL"))
+ 		p.full = true;
+ #endif
++	const bool wasFull = p.full;
+ 	int cells = findChanges(static_cast<const uint8_t *>(screen->pixels), screen->pitch);
+ 	if(SDL_MUSTLOCK(screen))
+ 		SDL_UnlockSurface(screen);
++	if(wasFull && p.centred)
++		clearBorders();
+ 	p.fullFrames += p.full;
+ 	p.full = false;
+ 	p.cells += static_cast<unsigned>(cells);
+@@ -410,7 +454,9 @@ std::vector<SDL_Rect> present(SDL_Surface * screen)
+ 		x1 = std::max(x1, r.x + r.w);
+ 		y1 = std::max(y1, r.y + r.h);
+ 	}
+-	if(update.size() > MAX_UPDATE_RECTS)
++	if(wasFull && p.centred)
++		update.assign(1, SDL_Rect{0, 0, p.dw, p.dh});
++	else if(update.size() > MAX_UPDATE_RECTS)
+ 	{
+ 		bounds.w = x1 - bounds.x;
+ 		bounds.h = y1 - bounds.y;
+@@ -437,6 +483,14 @@ void presentReset()
+ 	p.full = true;
+ }
+ 
++void presentSetCentred(bool centred)
++{
++	if(centred == presentCentred)
++		return;
++	presentCentred = centred;
++	p.shadow.clear(); // set up again with the next frame
++}
++
+ void presentSetPointer(SDL_Surface * image, int x, int y)
+ {
+ 	Pointer & ptr = p.pointer;
+diff --git a/riscos/riscos_present.h b/riscos/riscos_present.h
+index a9cc4c8..1665e1a 100644
+--- a/riscos/riscos_present.h
++++ b/riscos/riscos_present.h
+@@ -48,6 +48,12 @@ void presentSetPointer(SDL_Surface * image, int x, int y);
+ /// Forgets the last frame: the next one is presented in full.
+ void presentReset();
+ 
++/// Centred: the picture is shown at the largest whole-number scale that
++/// fits the window (at least 1), in the middle, with black borders, as SDL's
++/// renderer maps the mouse with SDL_RenderSetIntegerScale. Otherwise it is
++/// stretched to the whole window.
++void presentSetCentred(bool centred);
++
+ /// For the host test: presents into `target` (32 bpp XRGB or XBGR) and
+ /// returns the rectangles of `target` that were drawn.
+ std::vector<SDL_Rect> presentToSurface(SDL_Surface * target, SDL_Surface * screen);
+-- 
+2.43.0
+
