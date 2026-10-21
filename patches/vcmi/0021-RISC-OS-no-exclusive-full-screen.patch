@@ -1,0 +1,71 @@
+From 65e7eab09f2624e456540319b00fc171775a2d99 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 09:02:56 +0100
+Subject: [PATCH] RISC OS: no exclusive full screen
+
+Exclusive full screen changes the desktop's screen mode, and on a Pi
+the monitor showed "Signal Error" (25.2 MHz, 17.0 kHz, 20.9 Hz). On
+RISC OS it is now off: getPreferredWindowMode never chooses it,
+validateSettings clears video.realFullscreen (so a saved setting can't
+leave the screen blank at the next start), and its checkbox is greyed
+out. Full screen (borderless) with a smaller Resolution, centred or
+scaled by the overlay, does the job.
+---
+ client/renderSDL/ScreenHandler.cpp            | 15 +++++++++++++++
+ client/windows/settings/GeneralOptionsTab.cpp |  6 ++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/client/renderSDL/ScreenHandler.cpp b/client/renderSDL/ScreenHandler.cpp
+index 96636a7..f736754 100644
+--- a/client/renderSDL/ScreenHandler.cpp
++++ b/client/renderSDL/ScreenHandler.cpp
+@@ -263,6 +263,13 @@ EWindowMode ScreenHandler::getPreferredWindowMode() const
+ 	if (!fullscreen)
+ 		return EWindowMode::WINDOWED;
+ 
++#ifdef VCMI_RISCOS
++	// RISC OS: no exclusive full screen. It changes the desktop's screen
++	// mode, and a Pi's monitor may not take the mode it picks (seen: "Signal
++	// Error", 25.2 MHz / 17.0 kHz / 20.9 Hz). Full screen (borderless) with
++	// a smaller Resolution (centred, or scaled by the overlay) does the job.
++	realFullscreen = false;
++#endif
+ 	if (realFullscreen)
+ 		return EWindowMode::FULLSCREEN_EXCLUSIVE;
+ 	else
+@@ -627,6 +634,14 @@ bool ScreenHandler::onScreenResize(bool keepWindowResolution)
+ 
+ void ScreenHandler::validateSettings()
+ {
++#ifdef VCMI_RISCOS
++	// exclusive full screen is off on RISC OS (getPreferredWindowMode)
++	if(settings["video"]["realFullscreen"].Bool())
++	{
++		Settings writer = settings.write["video"]["realFullscreen"];
++		writer->Bool() = false;
++	}
++#endif
+ #ifndef VCMI_MOBILE
+ 	{
+ 		int displayIndex = settings["video"]["displayIndex"].Integer();
+diff --git a/client/windows/settings/GeneralOptionsTab.cpp b/client/windows/settings/GeneralOptionsTab.cpp
+index 914afce..91f0dc6 100644
+--- a/client/windows/settings/GeneralOptionsTab.cpp
++++ b/client/windows/settings/GeneralOptionsTab.cpp
+@@ -231,7 +231,13 @@ GeneralOptionsTab::GeneralOptionsTab()
+ 
+ 	std::shared_ptr<CToggleButton> fullscreenExclusiveCheckbox = widget<CToggleButton>("fullscreenExclusiveCheckbox");
+ 	if (fullscreenExclusiveCheckbox)
++	{
+ 		fullscreenExclusiveCheckbox->setSelected(settings["video"]["fullscreen"].Bool() && settings["video"]["realFullscreen"].Bool());
++#ifdef VCMI_RISCOS
++		// changing the screen mode can leave a Pi's monitor without a picture
++		fullscreenExclusiveCheckbox->disable();
++#endif
++	}
+ 
+ 	std::shared_ptr<CToggleButton> infoboxCheckbox = widget<CToggleButton>("performanceOverlayCheckbox");
+ 	infoboxCheckbox->setSelected(settings["video"]["performanceOverlay"]["show"].Bool());
+-- 
+2.43.0
+

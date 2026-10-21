@@ -49,6 +49,8 @@ Full screen (borderless) with a Resolution smaller than the screen
 (System Options, General: Resolution) shows the game at that size,
 centred, with black borders: sharp, and less work than filling the
 screen. Choosing the screen's own size fills it again.
+Fullscreen (exclusive) is greyed out: changing the screen mode could
+leave the monitor without a picture.
 
 On a Raspberry Pi, "Scale with the overlay" (System Options, General)
 fills the screen with that smaller picture instead: the Pi's video

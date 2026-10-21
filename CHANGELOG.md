@@ -1,5 +1,14 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos9test (not released)
+- No exclusive full screen on RISC OS. It changes the desktop's screen mode,
+  and on the owner's Pi the monitor showed "Signal Error" (25.2 MHz,
+  17.0 kHz, 20.9 Hz). The checkbox is greyed out, and a saved
+  `video.realFullscreen` is cleared at start, so it can't leave the screen
+  blank again. Use Full screen (borderless) with a smaller Resolution
+  (centred, or Scale with the overlay).
+- Otherwise as riscos8test.
+
 ## 1.7.5-riscos8test (not released)
 - Animation switches in System Options, Adventure Map (David Feugey's
   suggestion): Map animations (flags, windmills, creatures on the map),
