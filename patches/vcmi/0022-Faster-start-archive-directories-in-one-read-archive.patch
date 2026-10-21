@@ -1,0 +1,373 @@
+From 07a58c855aa669d8ec9d570d50198dfbf2eaf2e5 Mon Sep 17 00:00:00 2001
+From: Andrew Youll <adyoull@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 16:23:41 +0100
+Subject: [PATCH] Faster start: archive directories in one read, archives kept
+ open
+
+The directories of LOD, SND and VID archives were read a field at a time
+through CFileInputStream with a seek between entries, so the stream
+refilled its buffer for every entry: for the four big LODs about 112 MB
+read and 90,000 seeks for about 380 KB of directory, 8.8 s of a 17 s
+start on a Raspberry Pi. Each directory is now read in one go and parsed
+from memory.
+
+Every load() opened the archive again (1,512 opens before the main menu;
+opening a file is slow on RISC OS). The archive is now opened once and
+kept, and an entry is read with one seek and one read under a mutex and
+handed out from memory (entries over 16 MB are still streamed).
+
+RISC OS: the log gives each archive's index time, the number of JSON
+files with their reading and parsing time, and when !Run started
+(VCMI$RunAt).
+---
+ clientapp/EntryPoint.cpp          |   5 ++
+ lib/filesystem/CArchiveLoader.cpp | 126 ++++++++++++++++++++++++++----
+ lib/filesystem/CArchiveLoader.h   |  10 +++
+ lib/json/JsonNode.cpp             |  22 ++++++
+ lib/json/JsonNode.h               |  10 +++
+ lib/modding/CModHandler.cpp       |   4 +
+ 6 files changed, 161 insertions(+), 16 deletions(-)
+
+diff --git a/clientapp/EntryPoint.cpp b/clientapp/EntryPoint.cpp
+index a4f60d7..efe1629 100644
+--- a/clientapp/EntryPoint.cpp
++++ b/clientapp/EntryPoint.cpp
+@@ -238,6 +238,11 @@ int main(int argc, char * argv[])
+ 	logGlobal->info("Starting client of '%s'", GameConstants::VCMI_VERSION);
+ 	logGlobal->info("Creating console and configuring logger: %d ms", pomtime.getDiff());
+ 	logGlobal->info("The log file will be saved to %s", logPath);
++#ifdef VCMI_RISCOS
++	// !Run sets VCMI$RunAt to <Sys$Time>: how long the program took to load
++	if(const char * runAt = std::getenv("VCMI$RunAt"))
++		logGlobal->info("!Run started at %s", runAt);
++#endif
+ 
+ 	// Init filesystem and settings
+ 	try
+diff --git a/lib/filesystem/CArchiveLoader.cpp b/lib/filesystem/CArchiveLoader.cpp
+index b4af2fe..3e8ebcd 100644
+--- a/lib/filesystem/CArchiveLoader.cpp
++++ b/lib/filesystem/CArchiveLoader.cpp
+@@ -15,10 +15,67 @@
+ #include "CCompressedStream.h"
+ 
+ #include "CBinaryReader.h"
++#include "CMemoryStream.h"
+ #include "../texts/TextOperations.h"
+ 
++#include <cstdio>
++
+ VCMI_LIB_NAMESPACE_BEGIN
+ 
++namespace
++{
++/// The archive's directory, read in one go: reading it a field at a time
++/// through the file stream (with a seek between entries) made the stream
++/// refill its buffer for every entry, about 110 MB read and 90,000 seeks
++/// for the four big LODs (8.8 s on a Raspberry Pi).
++std::vector<ui8> readDirectory(CFileInputStream & fileStream, si64 start, si64 size)
++{
++	size = std::max<si64>(0, std::min(size, fileStream.getSize() - start));
++	std::vector<ui8> table(size);
++	fileStream.seek(start);
++	table.resize(fileStream.read(table.data(), size));
++	return table;
++}
++
++ui32 readLE32(const std::vector<ui8> & table, size_t at)
++{
++	if(at + 4 > table.size())
++		return 0;
++	return table[at] | (table[at + 1] << 8) | (table[at + 2] << 16) | (static_cast<ui32>(table[at + 3]) << 24);
++}
++
++std::string readName(const std::vector<ui8> & table, size_t at, size_t length)
++{
++	if(at >= table.size())
++		return {};
++	length = std::min(length, table.size() - at);
++	const char * begin = reinterpret_cast<const char *>(table.data() + at);
++	return std::string(begin, std::find(begin, begin + length, '\0'));
++}
++
++/// An archive entry read into memory
++class CArchiveEntryStream : public CMemoryStream
++{
++	std::vector<ui8> bytes;
++
++public:
++	explicit CArchiveEntryStream(std::vector<ui8> && data)
++		: CMemoryStream(data.data(), static_cast<si64>(data.size()))
++		, bytes(std::move(data))
++	{
++	}
++};
++
++/// Entries bigger than this are streamed from the file as before
++constexpr si64 maxInMemoryEntry = 16 * 1024 * 1024;
++}
++
++CArchiveLoader::~CArchiveLoader()
++{
++	if(file)
++		std::fclose(file);
++}
++
+ ArchiveEntry::ArchiveEntry()
+ 	: offset(0), fullSize(0), compressedSize(0)
+ {
+@@ -30,6 +87,9 @@ CArchiveLoader::CArchiveLoader(std::string _mountPoint, boost::filesystem::path
+     mountPoint(std::move(_mountPoint)),
+ 	extractArchives(_extractArchives)
+ {
++#ifdef VCMI_RISCOS
++	std::clock_t started = std::clock();
++#endif
+ 	// Open archive file(.snd, .vid, .lod)
+ 	CFileInputStream fileStream(archive);
+ 
+@@ -51,6 +111,10 @@ CArchiveLoader::CArchiveLoader(std::string _mountPoint, boost::filesystem::path
+ 		throw std::runtime_error("LOD archive format unknown. Cannot deal with " + archive.string());
+ 
+ 	logGlobal->trace("%sArchive \"%s\" loaded (%d files found).", ext, archive.filename(), entries.size());
++#ifdef VCMI_RISCOS
++	logGlobal->info("\t%s: %d files indexed in %d ms", archive.filename().string(), entries.size(),
++		static_cast<long>(std::clock() - started) * 1000 / CLOCKS_PER_SEC);
++#endif
+ }
+ 
+ void CArchiveLoader::initLODArchive(const std::string &mountPoint, CFileInputStream & fileStream)
+@@ -61,22 +125,23 @@ void CArchiveLoader::initLODArchive(const std::string &mountPoint, CFileInputStr
+ 	fileStream.seek(8);
+ 	ui32 totalFiles = reader.readUInt32();
+ 
+-	// Get all entries from file
+-	fileStream.seek(0x5c);
++	// Get all entries from file: 32 bytes each from 0x5c
++	std::vector<ui8> table = readDirectory(fileStream, 0x5c, static_cast<si64>(totalFiles) * 32);
++	totalFiles = std::min<ui32>(totalFiles, table.size() / 32);
+ 
+ 	// Insert entries to list
+ 	for(ui32 i = 0; i < totalFiles; ++i)
+ 	{
+-		char filename[16];
+-		reader.read(reinterpret_cast<ui8*>(filename), 16);
++		size_t at = static_cast<size_t>(i) * 32;
++		std::string filename = readName(table, at, 16);
+ 
+ 		// Create archive entry
+ 		ArchiveEntry entry;
+ 		entry.name     = filename;
+-		entry.offset   = reader.readUInt32();
+-		entry.fullSize = reader.readUInt32();
+-		fileStream.skip(4); // unused, unknown
+-		entry.compressedSize     = reader.readUInt32();
++		entry.offset   = readLE32(table, at + 16);
++		entry.fullSize = readLE32(table, at + 20);
++		// at + 24: unused, unknown
++		entry.compressedSize     = readLE32(table, at + 28);
+ 
+ 		// Add lod entry to local entries map
+ 		entries[ResourcePath(mountPoint + entry.name)] = entry;
+@@ -112,15 +177,18 @@ void CArchiveLoader::initVIDArchive(const std::string &mountPoint, CFileInputStr
+ 
+ 	std::set<int> offsets;
+ 
++	// 44 bytes an entry from 4
++	std::vector<ui8> table = readDirectory(fileStream, 4, static_cast<si64>(totalFiles) * 44);
++	totalFiles = std::min<ui32>(totalFiles, table.size() / 44);
++
+ 	// Insert entries to list
+ 	for(ui32 i = 0; i < totalFiles; ++i)
+ 	{
+-		char filename[40];
+-		reader.read(reinterpret_cast<ui8*>(filename), 40);
++		size_t at = static_cast<size_t>(i) * 44;
+ 
+ 		ArchiveEntry entry;
+-		entry.name = filename;
+-		entry.offset = reader.readInt32();
++		entry.name = readName(table, at, 40);
++		entry.offset = static_cast<si32>(readLE32(table, at + 40));
+ 		entry.compressedSize = 0;
+ 
+ 		offsets.insert(entry.offset);
+@@ -147,11 +215,15 @@ void CArchiveLoader::initSNDArchive(const std::string &mountPoint, CFileInputStr
+ 	fileStream.seek(0);
+ 	ui32 totalFiles = reader.readUInt32();
+ 
++	// 48 bytes an entry from 4
++	std::vector<ui8> table = readDirectory(fileStream, 4, static_cast<si64>(totalFiles) * 48);
++	totalFiles = std::min<ui32>(totalFiles, table.size() / 48);
++
+ 	// Insert entries to list
+ 	for(ui32 i = 0; i < totalFiles; ++i)
+ 	{
+-		char filename[40];
+-		reader.read(reinterpret_cast<ui8*>(filename), 40);
++		size_t at = static_cast<size_t>(i) * 48;
++		std::string filename = readName(table, at, 40);
+ 
+ 		// for some reason entries in snd have format NAME\0WAVRUBBISH....
+ 		// and Polish version does not have extension at all
+@@ -160,8 +232,8 @@ void CArchiveLoader::initSNDArchive(const std::string &mountPoint, CFileInputStr
+ 		entry.name  = filename; // till 1st \0
+ 		entry.name += ".wav";
+ 
+-		entry.offset = reader.readInt32();
+-		entry.fullSize = reader.readInt32();
++		entry.offset = static_cast<si32>(readLE32(table, at + 40));
++		entry.fullSize = static_cast<si32>(readLE32(table, at + 44));
+ 		entry.compressedSize = 0;
+ 		entries[ResourcePath(mountPoint + entry.name)] = entry;
+ 
+@@ -176,6 +248,28 @@ std::unique_ptr<CInputStream> CArchiveLoader::load(const ResourcePath & resource
+ 
+ 	const ArchiveEntry & entry = entries.at(resourceName);
+ 
++	// Read the entry whole from the archive kept open
++	si64 stored = entry.compressedSize != 0 ? entry.compressedSize : entry.fullSize;
++	if(stored >= 0 && stored <= maxInMemoryEntry)
++	{
++		std::vector<ui8> data(stored);
++		bool ok = false;
++		{
++			std::lock_guard lock(fileMutex);
++			if(!file)
++				file = std::fopen(archive.string().c_str(), "rb");
++			if(file && std::fseek(file, entry.offset, SEEK_SET) == 0)
++				ok = std::fread(data.data(), 1, data.size(), file) == data.size();
++		}
++		if(ok)
++		{
++			auto memoryStream = std::make_unique<CArchiveEntryStream>(std::move(data));
++			if(entry.compressedSize != 0)
++				return std::make_unique<CCompressedStream>(std::move(memoryStream), false, entry.fullSize);
++			return memoryStream;
++		}
++	}
++
+ 	if (entry.compressedSize != 0) //compressed data
+ 	{
+ 		auto fileStream = std::make_unique<CFileInputStream>(archive, entry.offset, entry.compressedSize);
+diff --git a/lib/filesystem/CArchiveLoader.h b/lib/filesystem/CArchiveLoader.h
+index 66bd93d..7fc7926 100644
+--- a/lib/filesystem/CArchiveLoader.h
++++ b/lib/filesystem/CArchiveLoader.h
+@@ -103,6 +103,16 @@ private:
+ 	/** Holds all entries of the archive file. An entry can be accessed via the entry name. **/
+ 	std::unordered_map<ResourcePath, ArchiveEntry> entries;
+ 
++	/// The archive, opened once for every load() (opening a file is slow on
++	/// RISC OS, and load() is called ~1500 times before the main menu).
++	/// Entries are read whole under the lock, then handed out in memory.
++	mutable std::mutex fileMutex;
++	mutable std::FILE * file = nullptr;
++public:
++	~CArchiveLoader();
++	CArchiveLoader(const CArchiveLoader &) = delete;
++	CArchiveLoader & operator=(const CArchiveLoader &) = delete;
++
+ 	/** Specifies if Original H3 archives should be extracted to a separate folder **/
+ 	bool extractArchives;
+ };
+diff --git a/lib/json/JsonNode.cpp b/lib/json/JsonNode.cpp
+index fc51587..68d6a96 100644
+--- a/lib/json/JsonNode.cpp
++++ b/lib/json/JsonNode.cpp
+@@ -17,6 +17,19 @@
+ 
+ #include <boost/lexical_cast.hpp>
+ 
++#ifdef VCMI_RISCOS
++#include <ctime>
++std::atomic<int> JsonLoadStats::files{0};
++std::atomic<long> JsonLoadStats::readTicks{0}, JsonLoadStats::parseTicks{0};
++#define JSON_LOAD_START() std::clock_t jsonT0 = std::clock(), jsonT1 = jsonT0
++#define JSON_LOAD_READ() jsonT1 = std::clock(); JsonLoadStats::readTicks += jsonT1 - jsonT0
++#define JSON_LOAD_PARSED() JsonLoadStats::parseTicks += std::clock() - jsonT1; JsonLoadStats::files++
++#else
++#define JSON_LOAD_START()
++#define JSON_LOAD_READ()
++#define JSON_LOAD_PARSED()
++#endif
++
+ // to avoid duplicating const and non-const code
+ template<typename Node>
+ Node & resolvePointer(Node & in, const std::string & pointer)
+@@ -122,27 +135,36 @@ JsonNode::JsonNode(const JsonPath & fileURI)
+ 
+ JsonNode::JsonNode(const JsonPath & fileURI, const JsonParsingSettings & parserSettings)
+ {
++	JSON_LOAD_START();
+ 	auto file = CResourceHandler::get()->load(fileURI)->readAll();
++	JSON_LOAD_READ();
+ 
+ 	JsonParser parser(reinterpret_cast<std::byte *>(file.first.get()), file.second, parserSettings);
+ 	*this = parser.parse(fileURI.getName());
++	JSON_LOAD_PARSED();
+ }
+ 
+ JsonNode::JsonNode(const JsonPath & fileURI, const std::string & modName)
+ {
++	JSON_LOAD_START();
+ 	auto file = CResourceHandler::get(modName)->load(fileURI)->readAll();
++	JSON_LOAD_READ();
+ 
+ 	JsonParser parser(reinterpret_cast<std::byte *>(file.first.get()), file.second, JsonParsingSettings());
+ 	*this = parser.parse(fileURI.getName());
++	JSON_LOAD_PARSED();
+ }
+ 
+ JsonNode::JsonNode(const JsonPath & fileURI, const JsonParsingSettings & parserSettings, const std::string & modName, bool & isValidSyntax)
+ {
++	JSON_LOAD_START();
+ 	auto file = CResourceHandler::get(modName)->load(fileURI)->readAll();
++	JSON_LOAD_READ();
+ 
+ 	JsonParser parser(reinterpret_cast<std::byte *>(file.first.get()), file.second, parserSettings);
+ 	*this = parser.parse(fileURI.getName());
+ 	isValidSyntax = parser.isValid();
++	JSON_LOAD_PARSED();
+ }
+ 
+ bool JsonNode::operator==(const JsonNode & other) const
+diff --git a/lib/json/JsonNode.h b/lib/json/JsonNode.h
+index f267afc..daf547d 100644
+--- a/lib/json/JsonNode.h
++++ b/lib/json/JsonNode.h
+@@ -35,6 +35,16 @@ struct DLL_LINKAGE JsonParsingSettings
+ 	bool strict = false;
+ };
+ 
++#ifdef VCMI_RISCOS
++#include <atomic>
++/// RISC OS: time spent loading JSON files (clock ticks), for the log
++struct DLL_LINKAGE JsonLoadStats
++{
++	static std::atomic<int> files;
++	static std::atomic<long> readTicks, parseTicks;
++};
++#endif
++
+ class DLL_LINKAGE JsonNode
+ {
+ public:
+diff --git a/lib/modding/CModHandler.cpp b/lib/modding/CModHandler.cpp
+index 1d2d46d..4fbb8a7 100644
+--- a/lib/modding/CModHandler.cpp
++++ b/lib/modding/CModHandler.cpp
+@@ -329,6 +329,10 @@ void CModHandler::load()
+ 	content->afterLoadFinalization();
+ 	logMod->info("\tHandlers post-load finalization");
+ 	logMod->info("\tAll game content loaded");
++#ifdef VCMI_RISCOS
++	logMod->info("\tJSON files: %d, reading %d ms, parsing %d ms", JsonLoadStats::files.load(),
++		JsonLoadStats::readTicks.load() * 1000 / CLOCKS_PER_SEC, JsonLoadStats::parseTicks.load() * 1000 / CLOCKS_PER_SEC);
++#endif
+ }
+ 
+ void CModHandler::afterLoad()
+-- 
+2.43.0
+

@@ -19,3 +19,4 @@
 0019-RISC-OS-switches-for-map-terrain-and-town-animations.patch
 0020-RISC-OS-scale-with-the-overlay-riscos-mesa-20.3.5-17.patch
 0021-RISC-OS-no-exclusive-full-screen.patch
+0022-Faster-start-archive-directories-in-one-read-archive.patch

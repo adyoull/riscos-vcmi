@@ -51,4 +51,6 @@ Unset VCMI$LogOn
 | the WimpSlot only holds the program and its stack.
 WimpSlot -min 48000K -max 48000K
 
+| For the log: when !Run started (the log says when the game did).
+Set VCMI$RunAt <Sys$Time>
 Do Run <VCMI$Dir>.vcmi %*0

@@ -1,5 +1,21 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos10test (not released)
+- Faster start (David Feugey: "the application takes forever to open"). On
+  the Pi, 8.8 s of the 17 s start went on reading the directories of the
+  four big LOD archives: VCMI read them a field at a time with a seek
+  between entries, which made the file stream refill its buffer for every
+  entry (on a PC: 112 MB read and 90,000 seeks for about 380 KB of
+  directory). Each directory (LOD, SND, VID) is now read in one go.
+- The archives stay open: every image and sound used to open its archive
+  again (1,512 opens before the main menu; opening a file is slow on RISC
+  OS). Now each archive is opened once and an entry is read with one seek
+  and one read (entries over 16 MB are still streamed).
+- The log says more about the start: how long each archive took to index,
+  how many JSON files were loaded and how long reading and parsing them
+  took, and when !Run started (`VCMI$RunAt`, set by !Run), to compare with
+  the log's first line.
+
 ## 1.7.5-riscos9test (not released)
 - No exclusive full screen on RISC OS. It changes the desktop's screen mode,
   and on the owner's Pi the monitor showed "Signal Error" (25.2 MHz,
