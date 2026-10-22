@@ -57,8 +57,8 @@ fills the screen with that smaller picture instead: the Pi's video
 overlay scales it, which costs the processor nothing, but the picture is
 smoothed rather than sharp (and stretched if its shape isn't the
 screen's). It needs VideoOverlay in !System and takes effect when VCMI
-is next started. New in this test build: tell us how it looks and how
-fast it is.
+is next started. It's new: reports of how it looks and how fast it is
+are welcome.
 
 It draws 30 frames a second (video.targetfps in
 <Choices$Write>.VCMI.Config.settings/json changes it). To make it

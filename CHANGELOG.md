@@ -1,5 +1,21 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos2 (2026-10-22)
+- An update to riscos1, the same program as 1.7.5-riscos10test ("fixes
+  work" on the owner's Pi), with suggestions from David Feugey on the ROOL
+  forum. In short (the test builds below have the details):
+  - Faster start: the game's archives are indexed in one read each and kept
+    open (8.8 s of a 17 s start on a Pi went on the indexes).
+  - A centred playground with black borders: in full screen (borderless), a
+    Resolution smaller than the screen is shown sharp and centred.
+  - Scale with the overlay (new; Raspberry Pi with VideoOverlay): the
+    smaller picture scaled to fill the screen by the Pi's video overlay.
+  - Switches for map, terrain and town animations (Adventure Map options).
+  - The icon bar no longer comes up over the full-screen game (riscos-mesa
+    20.3.5-17e).
+  - No exclusive full screen: it could leave the monitor without a picture.
+  - The log is at "info" (was "trace"), and says how long the start took.
+
 ## 1.7.5-riscos10test (not released)
 - Faster start (David Feugey: "the application takes forever to open"). On
   the Pi, 8.8 s of the 17 s start went on reading the directories of the
