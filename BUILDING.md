@@ -1,7 +1,7 @@
 # Building VCMI for RISC OS
 
 On x86-64 Linux (or the riscos-crossdev container image), with git, cmake
-3.16+, ninja, python3, ImageMagick (`convert`) and a host C++ compiler:
+3.16+, ninja, python3 and a host C++ compiler:
 
 ```
 build/build-deps.sh     # Boost, minizip, SDL2_image, SDL2_ttf, SDL2_mixer -> work/stage
@@ -27,6 +27,28 @@ tests/tbbshim/run.sh    # TBB stand-in, ThreadSanitizer and ASan/UBSan
 tests/present/run.sh    # presenter against a simple reference, ASan/UBSan
 tests/sound/run.sh      # sound feeding into a simulated SharedSoundBuffer, ASan/UBSan and TSan
 ```
+
+`build/ci.sh` does all of that (without innoextract) from a clean clone and
+runs the tests: the build on GitHub.
+
+## Building on GitHub
+
+`.github/workflows/riscos-build.yml` runs `build/ci.sh` in riscos-crossdev's
+container image (`ghcr.io/adyoull/riscos-crossdev:<version>`) on every push
+and pull request, and keeps `dist/vcmi-ci.zip` as a download on the run's
+page. `dl/` and `work/stage` are cached between runs.
+
+`.riscos-deps` names the riscos-crossdev and riscos-mesa releases it's built
+with; `build/env.sh` reads them. `.github/workflows/riscos-deps-update.yml`
+checks every day for newer releases of those, and if there is one, moves the
+pin (`ci/riscos-deps-hook.sh` adds a new devkit's sha256 to
+`build/SHA256SUMS.txt`), builds with it and opens a pull request saying
+whether the build passed. Nothing is released and nothing runs on RISC OS:
+merge, test on a Pi, then release. See riscos-crossdev's `docs/CI.md`.
+
+The update workflow needs, in Settings > Actions > General, "Workflow
+permissions: Read and write" and "Allow GitHub Actions to create and approve
+pull requests".
 
 Editing the patches: commit in `work/vcmi` (branch `riscos`), then
 `git -C work/vcmi format-patch -o patches/vcmi 1.7.5..riscos` and update

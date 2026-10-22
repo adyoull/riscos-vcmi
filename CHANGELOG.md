@@ -8,6 +8,11 @@
   riscos-mesa on a Pi 4: under half a millisecond an update.
   `*Show EGL$OverlayStatus` after a run says how the picture was shown.
 - The program is otherwise the same as riscos2.
+- Built on GitHub: in riscos-crossdev's container image on every push
+  (`build/ci.sh`: libraries, VCMI, the package and the host tests), with a
+  daily check for new riscos-crossdev and riscos-mesa releases that opens a
+  pull request (`.riscos-deps`). The icon is kept in `app/!VCMI`, so the
+  build no longer needs ImageMagick.
 
 ## 1.7.5-riscos2 (2026-10-22)
 - An update to riscos1, the same program as 1.7.5-riscos10test ("fixes

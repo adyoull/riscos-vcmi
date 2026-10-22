@@ -9,14 +9,18 @@ This repository holds the RISC OS changes as patches on VCMI 1.7.5
 `!VCMI` application around the program. You need the original game's files
 to play; see `app/!VCMI/H3data/ReadMe,fff`.
 
-**Status:** first release, 1.7.5-riscos1 (Raspberry Pi 4, RISC OS 5).
+**Status:** 1.7.5-riscos2 released (Raspberry Pi 4, RISC OS 5). Built on
+GitHub in riscos-crossdev's container image on every push (BUILDING.md).
 
 - `patches/vcmi/`: `git am` on VCMI's tag 1.7.5 (`series` gives the order).
 - `patches/boost/`: one patch for Boost 1.83 (UnixLib has statfs, not statvfs).
 - `patches/sdl2_mixer/`: a seek table for MP3 music (resuming a track no longer
   stops the sound) and mixing on request without an SDL audio device.
 - `build/`: `build-deps.sh`, `build-vcmi.sh`, `package.sh`, versions and
-  checksums (`env.sh`, `SHA256SUMS.txt`). See BUILDING.md.
+  checksums (`env.sh`, `SHA256SUMS.txt`), and `ci.sh`, the whole build and
+  tests as GitHub runs it. See BUILDING.md.
+- `.riscos-deps`, `.github/workflows/`, `ci/`: the GitHub build and the daily
+  check for new riscos-crossdev / riscos-mesa releases.
 - `tests/`: host tests of the TBB stand-in, the presenter and the sound feeding.
 - `app/!VCMI`: `!Run`, `!Boot`, `!Help`, the data folder's ReadMe.
 - `tools/gogimport/!GOGImport`: a desktop tool that unpacks the game's

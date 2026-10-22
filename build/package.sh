@@ -34,10 +34,12 @@ if find "$APP/config" "$APP/Mods" -name '*[$&@^#\\|":*<>]*' | grep .; then
   echo "file names RISC OS can't hold" >&2; exit 1
 fi
 
-# Icon from VCMI's own.
-convert "$WORK/vcmi/clientapp/icons/vcmiclient.64x64.png" -resize 34x34 -depth 8 PNG32:"$WORK/icon34.png"
-convert "$WORK/vcmi/clientapp/icons/vcmiclient.32x32.png" -resize 17x17 -depth 8 PNG32:"$WORK/icon17.png"
-python3 "$CROSSDEV/package/png2sprite.py" "$APP/!Sprites,ff9" "!vcmi=$WORK/icon34.png" "sm!vcmi=$WORK/icon17.png"
+# Icon from VCMI's own, made once and kept in app/!VCMI (so the build needs
+# no ImageMagick):
+#   convert vcmiclient.64x64.png -resize 34x34 -depth 8 PNG32:icon34.png
+#   convert vcmiclient.32x32.png -resize 17x17 -depth 8 PNG32:icon17.png
+#   png2sprite.py !Sprites,ff9 !vcmi=icon34.png sm!vcmi=icon17.png
+cp "$SRC/!Sprites,ff9" "$APP/"
 
 cp "$T/riscos/PThrTicker,ffa" "$APP/"
 cp "$T/riscos/PThreadTicker-Licence,fff" "$APP/docs/"
