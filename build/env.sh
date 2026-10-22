@@ -10,16 +10,19 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${FUZZYLITE_GIT:=https://github.com/fuzzylite/fuzzylite.git}"
 
 # riscos-crossdev (kit + prebuilt toolchain) and the riscos-mesa devkit (SDL2, zlib).
-: "${CROSSDEV_REF:=v1.8.2}"
+# riscos-crossdev and riscos-mesa: the releases named in .riscos-deps.
+deps_tag() { awk -v n="$1" '$1 == n || $1 == "adyoull/" n {print $2}' "$ROOT/.riscos-deps"; }
+: "${CROSSDEV_REF:=$(deps_tag riscos-crossdev)}"
+: "${MESA_TAG:=$(deps_tag riscos-mesa)}"
 : "${CROSSDEV_GIT:=https://github.com/adyoull/riscos-crossdev.git}"
 : "${TOOLCHAIN_TARBALL:=riscos-crossdev-toolchain-1.4-x86_64-linux.tar.xz}"
-: "${DEVKIT_TARBALL:=riscos-mesa-devkit-20.3.5-17.tgz}"
-# 20.3.5-17 adds SDL_RISCOS_FB_RENDER_SIZE / _OVERLAY (software windows
-# through the Pi's overlay), newer than the 20.3.5-16 riscos-crossdev pins;
-# build-deps.sh fetches it (if not in dl/) and unpacks it into $RISCOS_DEVKIT
-# after checking this sum.
-: "${DEVKIT_URL:=https://github.com/adyoull/riscos-mesa/releases/download/v20.3.5-17/riscos-mesa-devkit-20.3.5-17.tgz}"
-: "${DEVKIT_SHA256:=e0bea16a604265cde8d360055d2cb57dc38f4c7442954e599c393acd4c1395b8}"
+: "${DEVKIT_VERSION:=${MESA_TAG#v}}"
+# The riscos-mesa devkit of that release (20.3.5-17 has the overlay path for
+# SDL software windows, newer than the devkit riscos-crossdev installs):
+# build-deps.sh fetches it if it isn't in dl/, checks it against
+# SHA256SUMS.txt and unpacks it into $RISCOS_DEVKIT.
+: "${DEVKIT_TARBALL:=riscos-mesa-devkit-$DEVKIT_VERSION.tgz}"
+: "${DEVKIT_URL:=https://github.com/adyoull/riscos-mesa/releases/download/$MESA_TAG/$DEVKIT_TARBALL}"
 
 # Libraries built here (dl/ holds the tarballs; SHA256SUMS.txt checks them).
 : "${BOOST_TARBALL:=boost-1.83.0.tar.xz}"
@@ -38,9 +41,17 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${DL:=$ROOT/dl}"
 : "${WORK:=$ROOT/work}"
 : "${DIST:=$ROOT/dist}"
+# In riscos-crossdev's container image (GitHub), RCD_DIR is the kit, with
+# its toolchain installed; elsewhere it's cloned into work/.
+if [ -z "${CROSSDEV:-}" ] && [ -f "${RCD_DIR:-}/env.sh" ] && [ -x "${RISCOS_TOOLCHAIN:-}/bin/arm-riscos-gnueabihf-gcc" ]; then
+  CROSSDEV=$RCD_DIR
+fi
 : "${CROSSDEV:=$WORK/riscos-crossdev}"
 : "${STAGE:=$WORK/stage}"
 export ROOT VERSION DL WORK DIST CROSSDEV STAGE
 export RISCOS_TOOLCHAIN="${RISCOS_TOOLCHAIN:-$CROSSDEV/toolchain/env}"
-export RISCOS_DEVKIT="${RISCOS_DEVKIT:-$WORK/devkit-${DEVKIT_TARBALL#riscos-mesa-devkit-}}"
-RISCOS_DEVKIT=${RISCOS_DEVKIT%.tgz}
+# Our devkit, unless the one already set (the image's) is the same version.
+if ! grep -qx "riscos-mesa devkit $DEVKIT_VERSION" "${RISCOS_DEVKIT:-/nonexistent}/VERSION" 2>/dev/null; then
+  RISCOS_DEVKIT=$WORK/devkit-$DEVKIT_VERSION
+fi
+export RISCOS_DEVKIT

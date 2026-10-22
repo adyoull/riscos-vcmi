@@ -10,16 +10,23 @@ set -euo pipefail
 . "$(dirname "$0")/env.sh"
 mkdir -p "$DL" "$WORK/src" "$STAGE/lib" "$STAGE/include/SDL2"
 
-if [ ! -d "$CROSSDEV" ]; then
+if [ ! -f "$CROSSDEV/env.sh" ]; then
   git -c advice.detachedHead=false clone -q --branch "$CROSSDEV_REF" --depth 1 "$CROSSDEV_GIT" "$CROSSDEV"
 fi
 [ -x "$RISCOS_TOOLCHAIN/bin/arm-riscos-gnueabihf-gcc" ] || "$CROSSDEV/toolchain/install-prebuilt.sh"
 if [ ! -f "$RISCOS_DEVKIT/VERSION" ]; then
   [ -s "$DL/$DEVKIT_TARBALL" ] || curl -fSL --retry 3 -o "$DL/$DEVKIT_TARBALL" "$DEVKIT_URL"
-  echo "$DEVKIT_SHA256  $DL/$DEVKIT_TARBALL" | sha256sum -c --quiet
+  ( cd "$DL" && grep " $DEVKIT_TARBALL\$" "$ROOT/build/SHA256SUMS.txt" | sha256sum -c --quiet - ) ||
+    { echo "no checked sha256 for $DEVKIT_TARBALL in build/SHA256SUMS.txt" >&2; exit 1; }
   mkdir -p "$RISCOS_DEVKIT" && tar xzf "$DL/$DEVKIT_TARBALL" -C "$RISCOS_DEVKIT" --strip-components=1
 fi
 . "$CROSSDEV/env.sh"
+# The SDL2 libraries built here use the devkit's SDL2 headers: build them
+# again when the devkit changes.
+if [ "$(cat "$STAGE/.devkit" 2>/dev/null)" != "$DEVKIT_VERSION" ]; then
+  rm -f "$STAGE"/lib/libSDL2_image.a "$STAGE"/lib/libSDL2_ttf.a "$STAGE"/lib/libSDL2_mixer.a
+  echo "$DEVKIT_VERSION" > "$STAGE/.devkit"
+fi
 CFLAGS_RO="$RISCOS_CFLAGS -mtune=cortex-a72"
 TC="$CROSSDEV/cmake/riscos.cmake"
 

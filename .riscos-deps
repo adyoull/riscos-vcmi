@@ -1,0 +1,6 @@
+# NAME TAG: repositories at github.com/adyoull, at a release tag (docs/CI.md
+# of riscos-crossdev). build/env.sh reads these; the GitHub workflows move
+# them when a newer release comes out (ci/riscos-deps-hook.sh adds the new
+# devkit's sha256 to build/SHA256SUMS.txt).
+riscos-crossdev v1.8.2
+riscos-mesa v20.3.5-17
