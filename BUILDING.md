@@ -12,11 +12,11 @@ tools/gogimport/package.sh   # !GOGImport -> dist/gogimport-1.0.zip
 ```
 
 `build-deps.sh` clones riscos-crossdev at `CROSSDEV_REF` and installs its
-prebuilt toolchain, and unpacks the riscos-mesa devkit; both are expected in
-`dl/` (`TOOLCHAIN_TARBALL`, `DEVKIT_TARBALL`). The toolchain is a
-riscos-crossdev release on GitHub; the devkit, 20.3.5-17e (a riscos-mesa test
-build with the overlay path for SDL software windows), is attached to this
-repository's releases from 1.7.5-riscos2. The other
+prebuilt toolchain (expected in `dl/` as `TOOLCHAIN_TARBALL`, a
+riscos-crossdev release on GitHub), and unpacks the riscos-mesa devkit
+20.3.5-17 (`DEVKIT_TARBALL`, fetched from the riscos-mesa release on GitHub if
+it isn't in `dl/`). 1.7.5-riscos2 was built with the test devkit 20.3.5-17e,
+attached to that release. The other
 tarballs are downloaded if missing; all are checked against
 `build/SHA256SUMS.txt`.
 

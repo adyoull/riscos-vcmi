@@ -15,6 +15,7 @@ if [ ! -d "$CROSSDEV" ]; then
 fi
 [ -x "$RISCOS_TOOLCHAIN/bin/arm-riscos-gnueabihf-gcc" ] || "$CROSSDEV/toolchain/install-prebuilt.sh"
 if [ ! -f "$RISCOS_DEVKIT/VERSION" ]; then
+  [ -s "$DL/$DEVKIT_TARBALL" ] || curl -fSL --retry 3 -o "$DL/$DEVKIT_TARBALL" "$DEVKIT_URL"
   echo "$DEVKIT_SHA256  $DL/$DEVKIT_TARBALL" | sha256sum -c --quiet
   mkdir -p "$RISCOS_DEVKIT" && tar xzf "$DL/$DEVKIT_TARBALL" -C "$RISCOS_DEVKIT" --strip-components=1
 fi

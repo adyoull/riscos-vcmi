@@ -1,5 +1,14 @@
 # Changes in the RISC OS port of VCMI
 
+## 1.7.5-riscos11test (not released)
+- Built with the riscos-mesa 20.3.5-17 release (riscos2 used its test build
+  17e). For the overlay ("Scale with the overlay"), each overlay buffer is now
+  brought up to date with only what changed, and up to 8 separate rectangles
+  are kept; without an overlay only the changed parts are plotted. Tried by
+  riscos-mesa on a Pi 4: under half a millisecond an update.
+  `*Show EGL$OverlayStatus` after a run says how the picture was shown.
+- The program is otherwise the same as riscos2.
+
 ## 1.7.5-riscos2 (2026-10-22)
 - An update to riscos1, the same program as 1.7.5-riscos10test ("fixes
   work" on the owner's Pi), with suggestions from David Feugey on the ROOL
